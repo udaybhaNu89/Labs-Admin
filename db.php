@@ -1,12 +1,16 @@
 <?php
-$server = "localhost";
+$server = "127.0.0.1"; // CHANGED: Use IP to force network connection
 $user = "root";
-$pass = "";
+$pass = "nikson";      // Make sure this password matches what is in your Termux DB
 $dbname = "lab_db";
 
-$conn = mysqli_connect($server, $user, $pass, $dbname);
+// Optional: Enable error reporting to see issues clearly
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-if (!$conn) {
-    die("Connection failed: " . mysqli_connect_error());
+try {
+    $conn = mysqli_connect($server, $user, $pass, $dbname);
+} catch (mysqli_sql_exception $e) {
+    // This will catch the error and show a cleaner message
+    die("Connection failed: " . $e->getMessage());
 }
 ?>
