@@ -1,0 +1,93 @@
+-- 1. RESET DATABASE (Optional: This deletes old data to start fresh)
+DROP DATABASE IF EXISTS lab_db;
+CREATE DATABASE lab_db;
+USE lab_db;
+
+-- ====================================================
+-- 2. ADMIN TABLE (For Login)
+-- ====================================================
+CREATE TABLE admins (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    password VARCHAR(255) NOT NULL
+);
+
+-- Insert Default Admin User
+-- Username: admin
+-- Password: 12345
+INSERT INTO admins (username, password) VALUES ('admin', '12345');
+
+
+-- ====================================================
+-- 3. COMPLAINTS TABLE (The Main Data)
+-- ====================================================
+CREATE TABLE complaints (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    lab_number VARCHAR(50) NOT NULL,
+    pc_number VARCHAR(50) NOT NULL,
+    issue_description TEXT NOT NULL,
+    status VARCHAR(20) DEFAULT 'Pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    -- Note: Dynamic columns (like 'dyn_department') will be 
+    -- added automatically here by PHP when you create new sections.
+);
+
+
+-- ====================================================
+-- 4. STANDARD OPTION TABLES (For Dropdowns)
+-- ====================================================
+
+-- Table for Labs
+CREATE TABLE labs (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL
+);
+
+-- Table for PCs
+CREATE TABLE pcs (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL
+);
+
+-- Table for Issues (Checkboxes)
+CREATE TABLE issue_types (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL
+);
+
+
+-- ====================================================
+-- 5. DYNAMIC SECTIONS MASTER TABLE (For Advanced Config)
+-- ====================================================
+-- This keeps track of new sections you create (e.g., "Priority", "Room Type")
+CREATE TABLE dynamic_sections (
+    id INT(11) AUTO_INCREMENT PRIMARY KEY,
+    section_title VARCHAR(100) NOT NULL,
+    column_name VARCHAR(100) NOT NULL
+);
+
+
+-- ====================================================
+-- 6. INSERT INITIAL DATA (So lists aren't empty)
+-- ====================================================
+
+-- Default Labs
+INSERT INTO labs (name) VALUES 
+('Lab 1 (Java)'), 
+('Lab 2 (Python)'), 
+('Lab 3 (Hardware)');
+
+-- Default PCs
+INSERT INTO pcs (name) VALUES 
+('PC-01'), ('PC-02'), ('PC-03'), 
+('PC-04'), ('PC-05'), ('Server'), 
+('Instructor PC');
+
+-- Default Issues
+INSERT INTO issue_types (name) VALUES 
+('Mouse Not Working'), 
+('Keyboard Keys Stuck'), 
+('Monitor Flickering'), 
+('No Internet Access'), 
+('Software Not Installed'), 
+('System Overheating');
