@@ -12,7 +12,7 @@ if (isset($_POST['btn_login'])) {
 
     if (mysqli_num_rows($result) === 1) {
         $_SESSION['admin_user'] = $user;
-        header("Location: admin_dashboard.php");
+        header("Location: admin_panel.php");
         exit();
     } else {
         $error_msg = "Invalid Username or Password!";

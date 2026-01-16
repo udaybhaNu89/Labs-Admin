@@ -2,38 +2,32 @@
 include 'db.php';
 $message = "";
 
+// 1. HANDLE FORM SUBMISSION
 if (isset($_POST['submit_complaint'])) {
-    $lab = $_POST['lab_no'];
-    $pc = $_POST['pc_no'];
+    $cols = ""; $vals = "";
     
-    // Checkbox Logic
-    $issue_summary = "";
-    if (isset($_POST['issues'])) { $issue_summary = implode(", ", $_POST['issues']); }
-    $manual = $_POST['other_desc'];
-    $final = $issue_summary;
-    if (!empty($manual)) { $final .= " - Details: " . $manual; }
-
-    // DYNAMIC COLUMNS LOGIC
-    // We need to build the SQL query dynamically based on what sections exist
-    $col_names = "lab_number, pc_number, issue_description";
-    $col_values = "'$lab', '$pc', '$final'";
-
-    // Check for dynamic fields
-    $dyn_res = mysqli_query($conn, "SELECT * FROM dynamic_sections");
-    while ($sec = mysqli_fetch_assoc($dyn_res)) {
+    $res = mysqli_query($conn, "SELECT * FROM dynamic_sections ORDER BY display_order ASC");
+    while ($sec = mysqli_fetch_assoc($res)) {
         $col = $sec['column_name'];
+        $data = "";
         if (isset($_POST[$col])) {
-            $val = $_POST[$col];
-            $col_names .= ", " . $col; // Add column name to SQL
-            $col_values .= ", '" . $val . "'"; // Add value to SQL
+            $data = is_array($_POST[$col]) ? implode(", ", $_POST[$col]) : $_POST[$col];
         }
+        $data = mysqli_real_escape_string($conn, $data);
+        $cols .= ", $col"; 
+        $vals .= ", '$data'";
     }
-
-    if (!empty($final)) {
-        $sql = "INSERT INTO complaints ($col_names) VALUES ($col_values)";
-        if (mysqli_query($conn, $sql)) { $message = "Submitted successfully!"; } 
-        else { $message = "Error: " . mysqli_error($conn); }
-    } else { $message = "Please describe the issue."; }
+    
+    $other = mysqli_real_escape_string($conn, $_POST['other_details']);
+    $sql = "INSERT INTO complaints (other_details $cols) VALUES ('$other' $vals)";
+    
+    if (mysqli_query($conn, $sql)) { 
+        $message = "Your response has been recorded."; 
+        $msg_type = "success";
+    } else { 
+        $message = "Error: " . mysqli_error($conn); 
+        $msg_type = "error";
+    }
 }
 ?>
 
@@ -41,52 +35,210 @@ if (isset($_POST['submit_complaint'])) {
 <html>
 <head>
     <title>Report Issue</title>
-    <link rel="stylesheet" href="style.css">
+    <style>
+        /* =========================================
+           THEME SETTINGS - CHANGE COLORS HERE
+           ========================================= */
+        :root {
+            /* OPTION 1: TEAL THEME (Active) */
+            --primary: #009688;
+            --primary-dark: #00796b;
+            --bg-color: #e0f2f1;
+            --bg-body: #f0f4f4;
+
+            /* OPTION 2: BLUE THEME (Uncomment to use) */
+            /*
+            --primary: #1976d2;
+            --primary-dark: #0d47a1;
+            --bg-color: #e3f2fd;
+            --bg-body: #f0f6fc;
+            */
+
+            /* OPTION 3: RED THEME (Uncomment to use) */
+            /*
+            --primary: #db4437;
+            --primary-dark: #c53929;
+            --bg-color: #fce8e6;
+            --bg-body: #fdf5f5;
+            */
+            
+            /* OPTION 4: ORANGE THEME (Uncomment to use) */
+            /*
+            --primary: #f57c00;
+            --primary-dark: #ef6c00;
+            --bg-color: #fff3e0;
+            --bg-body: #fff8f0;
+            */
+        }
+
+        body {
+            background-color: var(--bg-body);
+            font-family: 'Roboto', 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 30px 0;
+            color: #202124;
+        }
+
+        .form-container {
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        /* Message Box */
+        .message-box {
+            background: #fff;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 5px solid var(--primary);
+            font-weight: bold;
+        }
+
+        /* Cards */
+        .form-card {
+            background-color: #fff;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 12px;
+            position: relative;
+        }
+        
+        /* Left border highlight on focus */
+        .form-card:focus-within {
+             border-left: 6px solid var(--primary);
+             padding-left: 18px; /* Adjust padding so text doesn't jump */
+        }
+
+        /* Header Card */
+        .form-header {
+            border-top: 10px solid var(--primary);
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+        }
+
+        h1 { font-size: 32px; font-weight: 400; margin: 0 0 10px 0; }
+        p.desc { font-size: 14px; color: #5f6368; margin-top: 0; }
+
+        label.question-title {
+            font-size: 16px; font-weight: 500; display: block; margin-bottom: 15px;
+        }
+        .req { color: #d93025; margin-left: 4px; }
+
+        /* Inputs */
+        select, textarea {
+            width: 100%;
+            padding: 10px 0;
+            border: none;
+            border-bottom: 1px solid #e0e0e0;
+            background: transparent;
+            font-family: inherit;
+            font-size: 14px;
+            outline: none;
+            transition: 0.3s;
+        }
+        select:focus, textarea:focus {
+            border-bottom: 2px solid var(--primary);
+            background-color: #fafafa;
+        }
+        
+        /* Checkboxes */
+        .checkbox-group { display: flex; flex-direction: column; gap: 10px; }
+        .checkbox-option { display: flex; align-items: center; font-size: 14px; cursor: pointer; }
+        input[type="checkbox"] {
+            margin-right: 15px; width: 18px; height: 18px; cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        /* Footer & Button */
+        .form-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+        
+        .btn-submit {
+            background-color: var(--primary);
+            color: #fff; border: none; border-radius: 4px; padding: 10px 24px;
+            font-size: 14px; font-weight: 500; cursor: pointer;
+        }
+        .btn-submit:hover { background-color: var(--primary-dark); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+
+        .top-nav { text-align: right; max-width: 640px; margin: 0 auto 10px auto; }
+        .top-nav a { color: #5f6368; text-decoration: none; font-size: 13px; }
+    </style>
 </head>
 <body>
-    <h2>Raise a Complaint</h2>
-    <a href="index.php">Back to Home</a>
-    <?php if ($message) echo "<p style='color:green; font-weight:bold;'>$message</p>"; ?>
 
-    <form method="POST">
-        <label>Select Lab:</label>
-        <select name="lab_no" required>
-            <option value="">-- Choose --</option>
-            <?php $r=mysqli_query($conn,"SELECT * FROM labs"); while($row=mysqli_fetch_assoc($r)) echo "<option value='".$row['name']."'>".$row['name']."</option>"; ?>
-        </select>
+    <div class="top-nav">
+        <a href="index.php">Back to Home</a>
+    </div>
 
-        <label>Select PC:</label>
-        <select name="pc_no" required>
-            <option value="">-- Choose --</option>
-            <?php $r=mysqli_query($conn,"SELECT * FROM pcs"); while($row=mysqli_fetch_assoc($r)) echo "<option value='".$row['name']."'>".$row['name']."</option>"; ?>
-        </select>
+    <div class="form-container">
+        
+        <div class="form-card form-header">
+            <h1>Lab Issue Report</h1>
+            <p class="desc">Submit your complaints regarding Labs, PCs, or Infrastructure.</p>
+            <p style="color: #d93025; font-size: 12px;">* Required</p>
+            <?php if ($message): ?>
+                <div style="margin-top: 15px; color: <?php echo ($msg_type=='success')? 'var(--primary-dark)' : '#d93025'; ?>; font-weight: bold;">
+                    <?php echo $message; ?>
+                </div>
+            <?php endif; ?>
+        </div>
 
-        <?php
-        $dyn_res = mysqli_query($conn, "SELECT * FROM dynamic_sections");
-        while ($sec = mysqli_fetch_assoc($dyn_res)) {
-            $title = $sec['section_title'];
-            $col = $sec['column_name'];
-            $table = "opts_" . $col;
+        <form method="POST">
             
-            echo "<label>Select $title:</label><br>";
-            echo "<select name='$col' required>";
-            echo "<option value=''>-- Choose $title --</option>";
-            
-            $opts = mysqli_query($conn, "SELECT * FROM $table");
-            while ($opt = mysqli_fetch_assoc($opts)) {
-                echo "<option value='".$opt['name']."'>".$opt['name']."</option>";
+            <?php
+            $res = mysqli_query($conn, "SELECT * FROM dynamic_sections ORDER BY display_order ASC");
+            while ($sec = mysqli_fetch_assoc($res)) {
+                $title = $sec['section_title']; 
+                $col = $sec['column_name']; 
+                $type = $sec['input_type'];
+                $table = "opts_" . $col;
+                
+                echo '<div class="form-card">';
+                echo '<label class="question-title">' . $title . ' <span class="req">*</span></label>';
+                
+                $opts = mysqli_query($conn, "SELECT * FROM $table");
+                
+                if ($type == 'dropdown') {
+                    echo "<select name='$col' required>";
+                    echo "<option value='' disabled selected>Choose</option>";
+                    while ($r = mysqli_fetch_assoc($opts)) { 
+                        echo "<option value='".$r['name']."'>".$r['name']."</option>"; 
+                    }
+                    echo "</select>";
+                } else {
+                    echo '<div class="checkbox-group">';
+                    if (mysqli_num_rows($opts) > 0) {
+                        while ($r = mysqli_fetch_assoc($opts)) { 
+                            echo '<label class="checkbox-option">';
+                            echo "<input type='checkbox' name='{$col}[]' value='".$r['name']."'>";
+                            echo $r['name'];
+                            echo '</label>';
+                        }
+                    } else { echo "<span style='color:#999; font-size:13px;'>No options found.</span>"; }
+                    echo '</div>';
+                }
+                echo '</div>';
             }
-            echo "</select><br><br>";
-        }
-        ?>
+            ?>
 
-        <label>Common Issues:</label><br>
-        <?php $r=mysqli_query($conn,"SELECT * FROM issue_types"); while($row=mysqli_fetch_assoc($r)) echo "<input type='checkbox' name='issues[]' value='".$row['name']."'> ".$row['name']."<br>"; ?>
-        <br>
+            <div class="form-card">
+                <label class="question-title">Other Details</label>
+                <textarea name="other_details" rows="1" placeholder="Your answer"></textarea>
+            </div>
 
-        <label>Other Details:</label>
-        <textarea name="other_desc" rows="3"></textarea>
-        <input type="submit" name="submit_complaint" value="Submit">
-    </form>
+            <div class="form-footer">
+                <input type="submit" name="submit_complaint" value="Submit" class="btn-submit">
+                <div style="font-size: 12px; color: var(--primary);">Clear form</div>
+            </div>
+
+        </form>
+        
+        <br><br>
+        <center style="font-size: 12px; color: #5f6368;">
+            This content is created by the Lab Admin.
+        </center>
+    </div>
+
 </body>
 </html>
