@@ -1,8 +1,20 @@
 <?php
+session_start(); // 1. Start Session to hold messages across redirect
 include 'db.php';
-$message = "";
 
-// 1. HANDLE FORM SUBMISSION
+$message = "";
+$msg_type = "";
+
+// 2. CHECK FOR SESSION MESSAGE (Display message after redirect)
+if (isset($_SESSION['message'])) {
+    $message = $_SESSION['message'];
+    $msg_type = $_SESSION['msg_type'];
+    // Clear the message so it doesn't show again on next refresh
+    unset($_SESSION['message']);
+    unset($_SESSION['msg_type']);
+}
+
+// 3. HANDLE FORM SUBMISSION
 if (isset($_POST['submit_complaint'])) {
     $cols = ""; $vals = "";
     
@@ -22,9 +34,13 @@ if (isset($_POST['submit_complaint'])) {
     $sql = "INSERT INTO complaints (other_details $cols) VALUES ('$other' $vals)";
     
     if (mysqli_query($conn, $sql)) { 
-        $message = "Your response has been recorded."; 
-        $msg_type = "success";
+        // 4. SUCCESS: Set Session Message and REDIRECT
+        $_SESSION['message'] = "Your response has been recorded."; 
+        $_SESSION['msg_type'] = "success";
+        header("Location: complaint.php"); 
+        exit(); // Stop script execution immediately
     } else { 
+        // ERROR: No redirect, show error immediately so user can retry
         $message = "Error: " . mysqli_error($conn); 
         $msg_type = "error";
     }
@@ -37,38 +53,12 @@ if (isset($_POST['submit_complaint'])) {
     <title>Report Issue</title>
     <style>
         /* =========================================
-           THEME SETTINGS - CHANGE COLORS HERE
+           THEME SETTINGS
            ========================================= */
         :root {
-            /* OPTION 1: TEAL THEME (Active) */
             --primary: #009688;
             --primary-dark: #00796b;
-            --bg-color: #e0f2f1;
             --bg-body: #f0f4f4;
-
-            /* OPTION 2: BLUE THEME (Uncomment to use) */
-            /*
-            --primary: #1976d2;
-            --primary-dark: #0d47a1;
-            --bg-color: #e3f2fd;
-            --bg-body: #f0f6fc;
-            */
-
-            /* OPTION 3: RED THEME (Uncomment to use) */
-            /*
-            --primary: #db4437;
-            --primary-dark: #c53929;
-            --bg-color: #fce8e6;
-            --bg-body: #fdf5f5;
-            */
-            
-            /* OPTION 4: ORANGE THEME (Uncomment to use) */
-            /*
-            --primary: #f57c00;
-            --primary-dark: #ef6c00;
-            --bg-color: #fff3e0;
-            --bg-body: #fff8f0;
-            */
         }
 
         body {
@@ -84,18 +74,6 @@ if (isset($_POST['submit_complaint'])) {
             margin: 0 auto;
         }
 
-        /* Message Box */
-        .message-box {
-            background: #fff;
-            border: 1px solid #dadce0;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 15px;
-            border-left: 5px solid var(--primary);
-            font-weight: bold;
-        }
-
-        /* Cards */
         .form-card {
             background-color: #fff;
             border: 1px solid #dadce0;
@@ -105,13 +83,11 @@ if (isset($_POST['submit_complaint'])) {
             position: relative;
         }
         
-        /* Left border highlight on focus */
         .form-card:focus-within {
              border-left: 6px solid var(--primary);
-             padding-left: 18px; /* Adjust padding so text doesn't jump */
+             padding-left: 18px; 
         }
 
-        /* Header Card */
         .form-header {
             border-top: 10px solid var(--primary);
             border-top-left-radius: 8px;
@@ -126,7 +102,6 @@ if (isset($_POST['submit_complaint'])) {
         }
         .req { color: #d93025; margin-left: 4px; }
 
-        /* Inputs */
         select, textarea {
             width: 100%;
             padding: 10px 0;
@@ -143,7 +118,6 @@ if (isset($_POST['submit_complaint'])) {
             background-color: #fafafa;
         }
         
-        /* Checkboxes */
         .checkbox-group { display: flex; flex-direction: column; gap: 10px; }
         .checkbox-option { display: flex; align-items: center; font-size: 14px; cursor: pointer; }
         input[type="checkbox"] {
@@ -151,7 +125,6 @@ if (isset($_POST['submit_complaint'])) {
             accent-color: var(--primary);
         }
 
-        /* Footer & Button */
         .form-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
         
         .btn-submit {
@@ -177,6 +150,7 @@ if (isset($_POST['submit_complaint'])) {
             <h1>Lab Issue Report</h1>
             <p class="desc">Submit your complaints regarding Labs, PCs, or Infrastructure.</p>
             <p style="color: #d93025; font-size: 12px;">* Required</p>
+            
             <?php if ($message): ?>
                 <div style="margin-top: 15px; color: <?php echo ($msg_type=='success')? 'var(--primary-dark)' : '#d93025'; ?>; font-weight: bold;">
                     <?php echo $message; ?>
@@ -197,7 +171,7 @@ if (isset($_POST['submit_complaint'])) {
                 echo '<div class="form-card">';
                 echo '<label class="question-title">' . $title . ' <span class="req">*</span></label>';
                 
-                $opts = mysqli_query($conn, "SELECT * FROM $table");
+                $opts = mysqli_query($conn, "SELECT * FROM $table ORDER BY name ASC");
                 
                 if ($type == 'dropdown') {
                     echo "<select name='$col' required>";
