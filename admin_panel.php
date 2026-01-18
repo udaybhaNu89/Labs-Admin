@@ -69,37 +69,63 @@ if (!isset($_SESSION['admin_user'])) {
 }
 
 // =================================================================
-// 2. ADMIN ACTIONS
+// 2. CONTEXT SWITCHING (TABLE CONFIGURATION)
 // =================================================================
 
 $current_view = $_GET['view'] ?? 'dashboard';
+$return_view = $_REQUEST['return_view'] ?? $current_view;
+
+// Define tables based on view
+if ($return_view == 'storage_management') {
+    $meta_table = "storage_sections"; 
+    $data_table = "storage_unit";     
+} else {
+    $meta_table = "dynamic_sections"; 
+    $data_table = "complaints";       
+}
+
+// =================================================================
+// 3. ADMIN ACTIONS
+// =================================================================
 
 // --- DASHBOARD ACTIONS ---
+
+// A. Delete Complaint
 if (isset($_GET['delete_complaint'])) {
     $id = $_GET['delete_complaint'];
-    mysqli_query($conn, "DELETE FROM complaints WHERE id = $id");
+    mysqli_query($conn, "DELETE FROM complaints WHERE created_at = \"$id\"");
     $_SESSION['sys_msg'] = "Complaint Deleted"; $_SESSION['sys_msg_color'] = "green";
     header("Location: admin_panel.php?view=dashboard"); exit();
 }
 
-// --- CONFIG ACTIONS ---
+// B. Mark as Completed (NEW LOGIC)
+if (isset($_GET['mark_complete'])) {
+    $id = $_GET['mark_complete'];
+    mysqli_query($conn, "UPDATE complaints SET status = 'Completed' WHERE created_at = \"$id\"");
+    $_SESSION['sys_msg'] = "Status Updated to Completed"; 
+    $_SESSION['sys_msg_color'] = "green";
+    header("Location: admin_panel.php?view=dashboard"); exit();
+}
+
+// --- CONFIG / STORAGE ACTIONS ---
 
 // 1. Move Section
 if (isset($_GET['move_section']) && isset($_GET['dir'])) {
     $id = $_GET['move_section']; $dir = $_GET['dir'];
-    $curr = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, display_order FROM dynamic_sections WHERE id = $id"));
+    $curr = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, display_order FROM $meta_table WHERE id = $id"));
     $curr_order = $curr['display_order'];
+    
     if ($dir == 'up') {
-        $target = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, display_order FROM dynamic_sections WHERE display_order < $curr_order ORDER BY display_order DESC LIMIT 1"));
+        $target = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, display_order FROM $meta_table WHERE display_order < $curr_order ORDER BY display_order DESC LIMIT 1"));
     } else {
-        $target = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, display_order FROM dynamic_sections WHERE display_order > $curr_order ORDER BY display_order ASC LIMIT 1"));
+        $target = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, display_order FROM $meta_table WHERE display_order > $curr_order ORDER BY display_order ASC LIMIT 1"));
     }
     if ($target) {
         $t_id = $target['id']; $t_order = $target['display_order'];
-        mysqli_query($conn, "UPDATE dynamic_sections SET display_order = $t_order WHERE id = $id");
-        mysqli_query($conn, "UPDATE dynamic_sections SET display_order = $curr_order WHERE id = $t_id");
+        mysqli_query($conn, "UPDATE $meta_table SET display_order = $t_order WHERE id = $id");
+        mysqli_query($conn, "UPDATE $meta_table SET display_order = $curr_order WHERE id = $t_id");
     }
-    header("Location: admin_panel.php?view=config"); exit();
+    header("Location: admin_panel.php?view=$return_view"); exit();
 }
 
 // 2. Create Section
@@ -107,49 +133,46 @@ if (isset($_POST['create_new_section'])) {
     $title = trim($_POST['section_title']); 
     $title_safe = mysqli_real_escape_string($conn, $title);
     $type = $_POST['input_type']; 
-    
-    // Checkbox Checked (1) = Allow Duplicates. 
-    // Checkbox Empty (0) = Enforce Unique.
     $is_unique = isset($_POST['is_unique']) ? 1 : 0; 
 
-    // CHECK IF SECTION ALREADY EXISTS
-    $check = mysqli_query($conn, "SELECT id FROM dynamic_sections WHERE section_title = '$title_safe'");
+    $check = mysqli_query($conn, "SELECT id FROM $meta_table WHERE section_title = '$title_safe'");
     if (mysqli_num_rows($check) > 0) {
-        $_SESSION['sys_msg'] = "$title already exists";
+        $_SESSION['sys_msg'] = "$title already exists in this section list";
         $_SESSION['sys_msg_color'] = "red";
     } else {
-        // Clean name generation
         $clean_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $title));
         $clean_name = trim($clean_name, '_');
         
-        $col = "dyn_" . $clean_name; 
+        $col = $clean_name; 
         $tbl = $clean_name; 
 
-        $col_check = mysqli_query($conn, "SELECT id FROM dynamic_sections WHERE column_name = '$col'");
-        if(mysqli_num_rows($col_check) > 0) {
-             $_SESSION['sys_msg'] = "Error: A section with a similar internal name ($col) already exists.";
+        $col_check = mysqli_query($conn, "SHOW COLUMNS FROM `$data_table` LIKE '$col'");
+        $tbl_check = mysqli_query($conn, "SHOW TABLES LIKE '$tbl'");
+
+        if(mysqli_num_rows($col_check) > 0 || mysqli_num_rows($tbl_check) > 0) {
+             $_SESSION['sys_msg'] = "Error: Name '$clean_name' is already used by a column or another section.";
              $_SESSION['sys_msg_color'] = "red";
-             header("Location: admin_panel.php?view=config"); exit();
+             header("Location: admin_panel.php?view=$return_view"); exit();
         }
 
-        $max = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MAX(display_order) as m FROM dynamic_sections")); 
+        $max = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MAX(display_order) as m FROM $meta_table")); 
         $next = $max['m'] + 1;
 
-        mysqli_query($conn, "INSERT INTO dynamic_sections (section_title, column_name, input_type, display_order, is_unique) VALUES ('$title_safe', '$col', '$type', $next, $is_unique)");
+        mysqli_query($conn, "INSERT INTO $meta_table (section_title, column_name, input_type, display_order, is_unique) VALUES ('$title_safe', '$col', '$type', $next, $is_unique)");
         
-        // BACKTICKS FOR TABLE NAME
         if ($is_unique != 1) {
             mysqli_query($conn, "CREATE TABLE `$tbl` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100), UNIQUE(name))");
         } else {
             mysqli_query($conn, "CREATE TABLE `$tbl` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100))");
         }
         
-        mysqli_query($conn, "ALTER TABLE complaints ADD COLUMN $col VARCHAR(255)");
+        mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` VARCHAR(255)");
+        
         $_SESSION['sys_msg'] = "Section Created Successfully"; 
         $_SESSION['sys_msg_color'] = "green";
     }
     
-    header("Location: admin_panel.php?view=config"); exit();
+    header("Location: admin_panel.php?view=$return_view"); exit();
 }
 
 // 3. Rename Section
@@ -158,55 +181,55 @@ if (isset($_POST['rename_section'])) {
     $new_name = trim($_POST['new_section_name']);
     $new_name_safe = mysqli_real_escape_string($conn, $new_name);
     
-    $old_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT section_title FROM dynamic_sections WHERE id = $id"));
+    $old_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT section_title FROM $meta_table WHERE id = $id"));
     $old_name = $old_row['section_title'];
 
-    $check = mysqli_query($conn, "SELECT id FROM dynamic_sections WHERE section_title = '$new_name_safe' AND id != $id");
+    $check = mysqli_query($conn, "SELECT id FROM $meta_table WHERE section_title = '$new_name_safe' AND id != $id");
     
     if (mysqli_num_rows($check) > 0) {
         $_SESSION['sys_msg'] = "$old_name can't be renamed as $new_name, because $new_name already exists";
         $_SESSION['sys_msg_color'] = "red";
     } else {
-        mysqli_query($conn, "UPDATE dynamic_sections SET section_title = '$new_name_safe' WHERE id = $id");
+        mysqli_query($conn, "UPDATE $meta_table SET section_title = '$new_name_safe' WHERE id = $id");
         $_SESSION['sys_msg'] = "Section Renamed Successfully";
         $_SESSION['sys_msg_color'] = "green";
     }
     
-    header("Location: admin_panel.php?view=config"); exit();
+    header("Location: admin_panel.php?view=$return_view"); exit();
 }
 
 // 4. Remove Section
 if (isset($_GET['remove_section'])) {
     $id = $_GET['remove_section'];
-    $data = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM dynamic_sections WHERE id = $id"));
+    $data = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM $meta_table WHERE id = $id"));
     if ($data) {
         $col = $data['column_name']; 
-        $tbl = substr($col, 4); 
+        $tbl = $col; 
         
         mysqli_query($conn, "DROP TABLE IF EXISTS `$tbl`"); 
-        try {
-            mysqli_query($conn, "ALTER TABLE complaints DROP COLUMN $col");
-        } catch (Exception $e) { /* Ignore if col missing */ }
         
-        mysqli_query($conn, "DELETE FROM dynamic_sections WHERE id = $id"); 
+        try {
+            mysqli_query($conn, "ALTER TABLE `$data_table` DROP COLUMN `$col`");
+        } catch (Exception $e) {}
+        
+        mysqli_query($conn, "DELETE FROM $meta_table WHERE id = $id"); 
     }
     $_SESSION['sys_msg'] = "Section Removed"; $_SESSION['sys_msg_color'] = "red";
-    header("Location: admin_panel.php?view=config"); exit();
+    header("Location: admin_panel.php?view=$return_view"); exit();
 }
 
 // 5. Add Option
 if (isset($_POST['add_option'])) {
     $target_col = $_POST['target_col'];
-    $tbl = substr($target_col, 4); 
+    $tbl = $target_col; 
     
     $raw_input = trim($_POST['new_val']);
     $items_to_add = [];
 
-    $sec_info = mysqli_fetch_assoc(mysqli_query($conn, "SELECT section_title, is_unique FROM dynamic_sections WHERE column_name = '$target_col'"));
+    $sec_info = mysqli_fetch_assoc(mysqli_query($conn, "SELECT section_title, is_unique FROM $meta_table WHERE column_name = '$target_col'"));
     $section_name = $sec_info['section_title'];
     $needs_unique = ($sec_info['is_unique'] != 1); 
 
-    // Range Logic
     if (preg_match('/^([a-zA-Z0-9\.-]*?)(\d+)-(\d+)$/', $raw_input, $matches)) {
         $prefix = $matches[1];
         $start = (int)$matches[2];
@@ -222,12 +245,11 @@ if (isset($_POST['add_option'])) {
 
     $duplicates_found = [];
 
-    // Check table exists
     $tbl_check = mysqli_query($conn, "SHOW TABLES LIKE '$tbl'");
     if (mysqli_num_rows($tbl_check) == 0) {
-        $_SESSION['sys_msg'] = "Error: Storage table missing. Please remove and recreate this section.";
+        $_SESSION['sys_msg'] = "Error: Storage table missing.";
         $_SESSION['sys_msg_color'] = "red";
-        header("Location: admin_panel.php?view=config"); exit();
+        header("Location: admin_panel.php?view=$return_view"); exit();
     }
 
     foreach ($items_to_add as $val) {
@@ -254,17 +276,17 @@ if (isset($_POST['add_option'])) {
         $_SESSION['sys_msg_color'] = "green";
     }
 
-    header("Location: admin_panel.php?view=config"); exit(); 
+    header("Location: admin_panel.php?view=$return_view"); exit(); 
 }
 
 // 6. Delete Option
 if (isset($_GET['del_opt_id'])) {
     $col = $_GET['target']; 
-    $tbl = substr($col, 4); 
+    $tbl = $col; 
     
     $id = $_GET['del_opt_id'];
     mysqli_query($conn, "DELETE FROM `$tbl` WHERE id=$id");
-    header("Location: admin_panel.php?view=config"); exit();
+    header("Location: admin_panel.php?view=$return_view"); exit();
 }
 
 // --- CREATE ADMIN ACTIONS ---
@@ -290,65 +312,52 @@ if (isset($_POST['btn_create_admin'])) {
     <style>
         /* GLOBAL STYLES */
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f4f6f9; }
-        
-        /* NAVBAR */
         .navbar { background-color: #34495e; overflow: hidden; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; height: 60px; }
         .nav-links a { float: left; display: block; color: white; text-align: center; padding: 20px 16px; text-decoration: none; font-size: 14px; font-weight: bold; }
         .nav-links a:hover, .nav-links a.active { background-color: #2c3e50; border-bottom: 3px solid #3498db; }
         .logout-btn { color: #e74c3c !important; border: 1px solid #e74c3c; border-radius: 4px; padding: 8px 15px !important; line-height: normal; }
         .logout-btn:hover { background: #e74c3c; color: white !important; }
-
-        /* CONTAINER */
         .container { padding: 20px; max-width: 1200px; margin: 0 auto; }
-        
-        /* DASHBOARD TABLES */
         table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         th, td { border: 1px solid #ddd; padding: 12px; text-align: center; vertical-align: middle; }
         th { background-color: #27ae60; color: white; }
         tr:nth-child(even) { background-color: #f9f9f9; }
         .btn-delete { background-color: #e74c3c; color: white; text-decoration: none; padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: bold; }
         .btn-delete:hover { background-color: #c0392b; }
+        
+        /* STATUS STYLES (NEW) */
+        .status-pending { color: #e74c3c; font-weight: bold; }
+        .status-completed { color: #27ae60; font-weight: bold; }
+        .btn-complete { background-color: #27ae60; color: white; text-decoration: none; padding: 4px 8px; border-radius: 3px; font-size: 11px; margin-left: 8px; transition: 0.3s; display: inline-block; }
+        .btn-complete:hover { background-color: #219150; }
 
-        /* CONFIG STYLES (Vertical) */
         .column { float: none; width: 95%; margin: 15px auto; padding: 15px; background: white; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; } 
         .row:after { content: ""; display: table; clear: both; } 
         .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #f2f2f2; padding-bottom: 10px; } 
         .header-row h3 { margin: 0; font-size: 1.1em; color: #333; } 
-        
         .btn-toggle { background-color: #008CBA; color: white; border: none; padding: 6px 12px; font-size: 13px; cursor: pointer; border-radius: 3px; } 
         .button-group { display: flex; gap: 5px; margin-top: 5px; } 
         .btn-add { flex: 1; background-color: #28a745; color: white; border: none; padding: 8px; cursor: pointer; border-radius: 3px; } 
         .btn-cancel { flex: 1; background-color: #6c757d; color: white; border: none; padding: 8px; cursor: pointer; border-radius: 3px; } 
-        
         ul { padding: 0; margin-top: 10px; list-style-type: none; } 
         li { background: #fff; border-bottom: 1px solid #eee; padding: 8px 5px; display: flex; justify-content: space-between; align-items: center; } 
         .btn-remove { background-color: #ff4d4d; color: white; text-decoration: none; font-size: 11px; padding: 4px 10px; border-radius: 3px; border: 1px solid #cc0000; font-family: sans-serif; } 
-        
         .create-section-box { background: #e3f2fd; padding: 20px; border: 2px dashed #2196F3; margin-bottom: 20px; text-align: center; } 
-        
-        /* Priority & Action Bar */
         .priority-box { background: #fff8e1; border: 1px solid #ffe082; padding: 15px; margin: 20px auto; width: 95%; border-radius: 8px; }
         .priority-row { display: flex; justify-content: space-between; align-items: center; background: white; padding: 10px 15px; margin-bottom: 5px; border: 1px solid #eee; border-radius: 4px; }
         .btn-up, .btn-down { background-color: #3498db; color: white; padding: 5px 12px; border-radius: 4px; font-weight: bold; margin-left: 2px; text-decoration: none; }
         .btn-disabled { background-color: #bdc3c7; color: #fff; padding: 5px 12px; border-radius: 4px; cursor: default; pointer-events: none; text-decoration: none; }
-        
         .action-bar { background-color: #f9f9f9; padding: 10px; margin-bottom: 15px; border: 1px solid #eee; display: flex; flex-direction: column; gap: 8px; }
         .rename-box { display:none; background: #fffbe6; padding: 10px; border: 1px solid #e6dbb9; margin-bottom: 5px; }
-
         .remove-wrapper { display: flex; gap: 5px; }
         .btn-action-remove { flex: 3; background-color: #ff4d4d; color: white; border: 1px solid #cc0000; padding: 8px; font-size: 12px; cursor: pointer; text-align: center; text-decoration: none; border-radius: 3px; }
         .btn-action-remove.disabled { background-color: #e0e0e0; border-color: #ccc; color: #999; pointer-events: none; }
         .btn-safety-toggle { flex: 1; background-color: #555; color: white; border: none; padding: 8px; font-size: 11px; font-weight: bold; cursor: pointer; border-radius: 3px; }
         .btn-edit-trigger { background-color: #777; color: white; padding: 5px 10px; font-size: 11px; border-radius: 3px; cursor: pointer; border: none; }
-
-        /* ARROW BUTTON STYLE */
-        .btn-arrow { background:none; border:none; font-size:16px; cursor:pointer; color:#555; transition: transform 0.3s; margin-left: 10px; }
+        .btn-arrow { background:none; border:none; font-size:16px; cursor:pointer; color:#555; transition: transform 0.3s; margin-left: 10px; padding: 0 5px; }
         .btn-arrow:hover { color: #008CBA; }
-
-        /* CREATE ADMIN */
         .admin-box { width: 300px; margin: 50px auto; padding: 25px; background: white; border: 1px solid #ddd; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .admin-box input[type="text"], .admin-box input[type="password"] { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-
     </style>
     <script>
         function toggle(id) { var x=document.getElementById(id); x.style.display=(x.style.display==="none")?"block":"none"; }
@@ -358,16 +367,14 @@ if (isset($_POST['btn_create_admin'])) {
             if (t.innerHTML === "ENABLE") { t.innerHTML = "DISABLE"; r.classList.remove("disabled"); r.style.pointerEvents="auto"; r.style.backgroundColor="#d00"; } 
             else { t.innerHTML = "ENABLE"; r.classList.add("disabled"); r.style.pointerEvents="none"; r.style.backgroundColor="#999"; }
         }
-        
-        // TOGGLE LIST VISIBILITY
         function toggleList(listId, btn) {
             var list = document.getElementById(listId);
             if (list.style.display === "none") {
                 list.style.display = "block";
-                btn.innerHTML = "&#9660;"; // Down Arrow
+                btn.innerHTML = "&#9660;"; 
             } else {
                 list.style.display = "none";
-                btn.innerHTML = "&#9654;"; // Right Arrow
+                btn.innerHTML = "&#9654;"; 
             }
         }
     </script>
@@ -378,6 +385,7 @@ if (isset($_POST['btn_create_admin'])) {
         <div class="nav-links">
             <a href="admin_panel.php?view=dashboard" class="<?php echo ($current_view=='dashboard')?'active':''; ?>">View Complaints</a>
             <a href="admin_panel.php?view=config" class="<?php echo ($current_view=='config')?'active':''; ?>">Manage Options</a>
+            <a href="admin_panel.php?view=storage_management" class="<?php echo ($current_view=='storage_management')?'active':''; ?>">Storage Management</a>
             <a href="admin_panel.php?view=create_admin" class="<?php echo ($current_view=='create_admin')?'active':''; ?>">New Admin</a>
         </div>
         <div class="nav-links">
@@ -402,6 +410,7 @@ if (isset($_POST['btn_create_admin'])) {
             </div>
             
             <?php
+            // Dashboard currently shows complaints from 'dynamic_sections' logic
             $sections = [];
             $res = mysqli_query($conn, "SELECT * FROM dynamic_sections ORDER BY display_order ASC");
             while ($row = mysqli_fetch_assoc($res)) { $sections[] = $row; }
@@ -416,7 +425,7 @@ if (isset($_POST['btn_create_admin'])) {
                     <th>Action</th>
                 </tr>
                 <?php
-                $sql = "SELECT * FROM complaints ORDER BY id DESC";
+                $sql = "SELECT * FROM complaints ORDER BY created_at DESC";
                 $result = mysqli_query($conn, $sql);
                 if (mysqli_num_rows($result) > 0) {
                     while ($row = mysqli_fetch_assoc($result)) {
@@ -427,10 +436,22 @@ if (isset($_POST['btn_create_admin'])) {
                             echo "<td>" . $val . "</td>";
                         }
                         $other = (!empty($row['other_details'])) ? $row['other_details'] : "-";
+                        $status = !empty($row['status']) ? $row['status'] : 'Pending';
+                        
                         echo "<td>" . $other . "</td>";
-                        echo "<td>" . $row['status'] . "</td>";
+                        
+                        // STATUS COLUMN LOGIC
+                        echo "<td>";
+                        if($status == 'Pending') {
+                            echo "<span class='status-pending'>Pending</span>";
+                            echo "<a href='admin_panel.php?mark_complete=".$row['created_at']."' class='btn-complete'>Completed</a>";
+                        } else {
+                            echo "<span class='status-completed'>Completed</span>";
+                        }
+                        echo "</td>";
+
                         echo "<td>" . $row['created_at'] . "</td>";
-                        echo "<td><a href='admin_panel.php?delete_complaint=" . $row['id'] . "' class='btn-delete' onclick='return confirm(\"Are you sure?\");'>Delete</a></td>";
+                        echo "<td><a href='admin_panel.php?delete_complaint=" . $row['created_at'] . "' class='btn-delete' onclick='return confirm(\"Are you sure?\");'>Delete</a></td>";
                         echo "</tr>";
                     }
                 } else { 
@@ -440,15 +461,18 @@ if (isset($_POST['btn_create_admin'])) {
                 ?>
             </table>
 
-        <?php elseif ($current_view == 'config'): ?>
-            <h1 style="color:#333;">Manage Complaint Page Options</h1>
+        <?php elseif ($current_view == 'config' || $current_view == 'storage_management'): ?>
+            <h1 style="color:#333;">
+                <?php echo ($current_view == 'storage_management') ? 'Storage Management' : 'Manage Complaint Page Options'; ?>
+            </h1>
             <hr>
 
             <div class="priority-box">
                 <h3>Section Priority / Reorder</h3>
                 <?php
                 $all_secs = [];
-                $res = mysqli_query($conn, "SELECT * FROM dynamic_sections ORDER BY display_order ASC");
+                // Query the metadata table defined at the top
+                $res = mysqli_query($conn, "SELECT * FROM $meta_table ORDER BY display_order ASC");
                 while($row = mysqli_fetch_assoc($res)) { $all_secs[] = $row; }
                 $total = count($all_secs);
                 
@@ -457,10 +481,9 @@ if (isset($_POST['btn_create_admin'])) {
                     $is_last = ($index === ($total - 1));
                     $up_class = $is_first ? "btn-disabled" : "btn-up";
                     $down_class = $is_last ? "btn-disabled" : "btn-down";
-                    
                     echo "<div class='priority-row'><strong>" . $sec['section_title'] . "</strong><div>";
-                    echo "<a href='admin_panel.php?view=config&move_section=".$sec['id']."&dir=up' class='$up_class'>&uarr;</a>";
-                    echo "<a href='admin_panel.php?view=config&move_section=".$sec['id']."&dir=down' class='$down_class'>&darr;</a>";
+                    echo "<a href='admin_panel.php?move_section=".$sec['id']."&dir=up&return_view=$current_view' class='$up_class'>&uarr;</a>";
+                    echo "<a href='admin_panel.php?move_section=".$sec['id']."&dir=down&return_view=$current_view' class='$down_class'>&darr;</a>";
                     echo "</div></div>";
                 }
                 ?>
@@ -468,9 +491,10 @@ if (isset($_POST['btn_create_admin'])) {
 
             <div class="create-section-box">
                 <h3>Need a new category?</h3>
-                <button class="btn-toggle" style="width:auto; padding:8px 20px;" onclick="toggle('new_sec_form')">+ Create New Section</button>
-                <div id="new_sec_form" style="display:none; margin-top:15px; width: 60%; margin: 15px auto;">
+                <button class="btn-toggle" style="width:auto; padding:8px 20px;" onclick="toggle('new_sec_form_gen')">+ Create New Section</button>
+                <div id="new_sec_form_gen" style="display:none; margin-top:15px; width: 60%; margin: 15px auto;">
                     <form method="POST">
+                        <input type="hidden" name="return_view" value="<?php echo $current_view; ?>">
                         <input type="text" name="section_title" placeholder="Name (e.g. Room Number)" required style="padding:5px; width:70%;">
                         <select name="input_type" style="padding:5px;">
                             <option value="dropdown">Dropdown</option>
@@ -480,10 +504,9 @@ if (isset($_POST['btn_create_admin'])) {
                         <label style="font-size:14px; color:#333;">
                             <input type="checkbox" name="is_unique" value="1"> Allow Duplicate Values
                         </label>
-                        
                         <div class="button-group">
                             <input type="submit" name="create_new_section" value="Create" class="btn-add">
-                            <button type="button" class="btn-cancel" onclick="toggle('new_sec_form')">Cancel</button>
+                            <button type="button" class="btn-cancel" onclick="toggle('new_sec_form_gen')">Cancel</button>
                         </div>
                     </form>
                 </div>
@@ -492,7 +515,8 @@ if (isset($_POST['btn_create_admin'])) {
             <div class="row">
                 <?php foreach($all_secs as $sec) {
                     $title = $sec['section_title']; $col = $sec['column_name']; $sid = $sec['id'];
-                    $table = substr($col, 4); // Deriving table name
+                    $table = $col; // Table name = Column name (No suffix/prefix)
+
                     $act_id="act_$sid"; $ren_id="ren_$sid"; $add_id="add_$sid"; $rem_id="rem_$sid"; $saf_id="saf_$sid";
                     $list_id="list_$sid"; 
                 ?>
@@ -509,6 +533,7 @@ if (isset($_POST['btn_create_admin'])) {
                             <button class="btn-toggle" style="background-color:#ff9800;" onclick="toggle('<?php echo $ren_id; ?>')">Edit Label</button>
                             <div id="<?php echo $ren_id; ?>" class="rename-box">
                                 <form method="POST">
+                                    <input type="hidden" name="return_view" value="<?php echo $current_view; ?>">
                                     <input type="hidden" name="target_id" value="<?php echo $sid; ?>">
                                     <input type="text" name="new_section_name" value="<?php echo $title; ?>" required style="padding:5px; width:100%; box-sizing:border-box;">
                                     <div class="button-group">
@@ -519,7 +544,7 @@ if (isset($_POST['btn_create_admin'])) {
                             </div>
 
                             <div class="remove-wrapper">
-                                <a href="admin_panel.php?view=config&remove_section=<?php echo $sid; ?>" 
+                                <a href="admin_panel.php?remove_section=<?php echo $sid; ?>&return_view=<?php echo $current_view; ?>" 
                                    id="<?php echo $rem_id; ?>" 
                                    class="btn-action-remove disabled" 
                                    onclick="return confirm('WARNING: Delete entire section?');">
@@ -532,6 +557,7 @@ if (isset($_POST['btn_create_admin'])) {
 
                         <div id="<?php echo $add_id; ?>" style="display:none; margin-top:10px; background:#f9f9f9; padding:10px; border:1px solid #eee;">
                             <form method="POST">
+                                <input type="hidden" name="return_view" value="<?php echo $current_view; ?>">
                                 <input type="hidden" name="target_col" value="<?php echo $col; ?>">
                                 <input type="text" name="new_val" placeholder="Name or Range (e.g. PC1-5)" required style="width:100%; padding:5px; box-sizing:border-box;">
                                 <div class="button-group">
@@ -545,25 +571,18 @@ if (isset($_POST['btn_create_admin'])) {
                             <?php
                             $check_table = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
                             if(mysqli_num_rows($check_table) > 0) {
-                                // Natural Sorting Fix
                                 $items = [];
                                 $res = mysqli_query($conn, "SELECT * FROM `$table`");
-                                while ($row = mysqli_fetch_assoc($res)) {
-                                    $items[] = $row;
-                                }
-                                usort($items, function($a, $b) {
-                                    return strnatcasecmp($a['name'], $b['name']);
-                                });
+                                while ($row = mysqli_fetch_assoc($res)) { $items[] = $row; }
+                                usort($items, function($a, $b) { return strnatcasecmp($a['name'], $b['name']); });
 
                                 foreach ($items as $opt) {
                                     echo "<li>";
                                     echo "<span>" . $opt['name'] . "</span>";
-                                    echo "<a href='admin_panel.php?view=config&del_opt_id=".$opt['id']."&target=".$col."' class='btn-remove'>Remove</a>";
+                                    echo "<a href='admin_panel.php?del_opt_id=".$opt['id']."&target=".$col."&return_view=$current_view' class='btn-remove'>Remove</a>";
                                     echo "</li>";
                                 }
-                            } else {
-                                echo "<li style='color:red;'>Error: Storage table '$table' not found.</li>";
-                            }
+                            } else { echo "<li style='color:red;'>Error: Storage table '$table' not found.</li>"; }
                             ?>
                         </ul>
                     </div>

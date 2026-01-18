@@ -1,15 +1,14 @@
 <?php
-session_start(); // 1. Start Session to hold messages across redirect
+session_start(); // 1. Start Session
 include 'db.php';
 
 $message = "";
 $msg_type = "";
 
-// 2. CHECK FOR SESSION MESSAGE (Display message after redirect)
+// 2. CHECK FOR SESSION MESSAGE
 if (isset($_SESSION['message'])) {
     $message = $_SESSION['message'];
     $msg_type = $_SESSION['msg_type'];
-    // Clear the message so it doesn't show again on next refresh
     unset($_SESSION['message']);
     unset($_SESSION['msg_type']);
 }
@@ -34,13 +33,11 @@ if (isset($_POST['submit_complaint'])) {
     $sql = "INSERT INTO complaints (other_details $cols) VALUES ('$other' $vals)";
     
     if (mysqli_query($conn, $sql)) { 
-        // 4. SUCCESS: Set Session Message and REDIRECT
         $_SESSION['message'] = "Your response has been recorded."; 
         $_SESSION['msg_type'] = "success";
         header("Location: complaint.php"); 
-        exit(); // Stop script execution immediately
+        exit(); 
     } else { 
-        // ERROR: No redirect, show error immediately so user can retry
         $message = "Error: " . mysqli_error($conn); 
         $msg_type = "error";
     }
@@ -52,88 +49,25 @@ if (isset($_POST['submit_complaint'])) {
 <head>
     <title>Report Issue</title>
     <style>
-        /* =========================================
-           THEME SETTINGS
-           ========================================= */
-        :root {
-            --primary: #009688;
-            --primary-dark: #00796b;
-            --bg-body: #f0f4f4;
-        }
-
-        body {
-            background-color: var(--bg-body);
-            font-family: 'Roboto', 'Segoe UI', Arial, sans-serif;
-            margin: 0;
-            padding: 30px 0;
-            color: #202124;
-        }
-
-        .form-container {
-            max-width: 640px;
-            margin: 0 auto;
-        }
-
-        .form-card {
-            background-color: #fff;
-            border: 1px solid #dadce0;
-            border-radius: 8px;
-            padding: 24px;
-            margin-bottom: 12px;
-            position: relative;
-        }
-        
-        .form-card:focus-within {
-             border-left: 6px solid var(--primary);
-             padding-left: 18px; 
-        }
-
-        .form-header {
-            border-top: 10px solid var(--primary);
-            border-top-left-radius: 8px;
-            border-top-right-radius: 8px;
-        }
-
+        /* THEME SETTINGS */
+        :root { --primary: #009688; --primary-dark: #00796b; --bg-body: #f0f4f4; }
+        body { background-color: var(--bg-body); font-family: 'Roboto', 'Segoe UI', Arial, sans-serif; margin: 0; padding: 30px 0; color: #202124; }
+        .form-container { max-width: 640px; margin: 0 auto; }
+        .form-card { background-color: #fff; border: 1px solid #dadce0; border-radius: 8px; padding: 24px; margin-bottom: 12px; position: relative; }
+        .form-card:focus-within { border-left: 6px solid var(--primary); padding-left: 18px; }
+        .form-header { border-top: 10px solid var(--primary); border-top-left-radius: 8px; border-top-right-radius: 8px; }
         h1 { font-size: 32px; font-weight: 400; margin: 0 0 10px 0; }
         p.desc { font-size: 14px; color: #5f6368; margin-top: 0; }
-
-        label.question-title {
-            font-size: 16px; font-weight: 500; display: block; margin-bottom: 15px;
-        }
+        label.question-title { font-size: 16px; font-weight: 500; display: block; margin-bottom: 15px; }
         .req { color: #d93025; margin-left: 4px; }
-
-        select, textarea {
-            width: 100%;
-            padding: 10px 0;
-            border: none;
-            border-bottom: 1px solid #e0e0e0;
-            background: transparent;
-            font-family: inherit;
-            font-size: 14px;
-            outline: none;
-            transition: 0.3s;
-        }
-        select:focus, textarea:focus {
-            border-bottom: 2px solid var(--primary);
-            background-color: #fafafa;
-        }
-        
+        select, textarea { width: 100%; padding: 10px 0; border: none; border-bottom: 1px solid #e0e0e0; background: transparent; font-family: inherit; font-size: 14px; outline: none; transition: 0.3s; }
+        select:focus, textarea:focus { border-bottom: 2px solid var(--primary); background-color: #fafafa; }
         .checkbox-group { display: flex; flex-direction: column; gap: 10px; }
         .checkbox-option { display: flex; align-items: center; font-size: 14px; cursor: pointer; }
-        input[type="checkbox"] {
-            margin-right: 15px; width: 18px; height: 18px; cursor: pointer;
-            accent-color: var(--primary);
-        }
-
+        input[type="checkbox"] { margin-right: 15px; width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
         .form-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
-        
-        .btn-submit {
-            background-color: var(--primary);
-            color: #fff; border: none; border-radius: 4px; padding: 10px 24px;
-            font-size: 14px; font-weight: 500; cursor: pointer;
-        }
+        .btn-submit { background-color: var(--primary); color: #fff; border: none; border-radius: 4px; padding: 10px 24px; font-size: 14px; font-weight: 500; cursor: pointer; }
         .btn-submit:hover { background-color: var(--primary-dark); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
-
         .top-nav { text-align: right; max-width: 640px; margin: 0 auto 10px auto; }
         .top-nav a { color: #5f6368; text-decoration: none; font-size: 13px; }
     </style>
@@ -166,31 +100,55 @@ if (isset($_POST['submit_complaint'])) {
                 $title = $sec['section_title']; 
                 $col = $sec['column_name']; 
                 $type = $sec['input_type'];
-                $table = "opts_" . $col;
+                
+                // FIX 1: Table Name Logic (Remove 'dyn_' to match admin_panel)
+                // e.g., 'dyn_room_no' -> 'room_no'
+                $table = substr($col, 4); 
                 
                 echo '<div class="form-card">';
                 echo '<label class="question-title">' . $title . ' <span class="req">*</span></label>';
                 
-                $opts = mysqli_query($conn, "SELECT * FROM $table ORDER BY name ASC");
+                // FIX 2: Check if table exists to prevent crash
+                $check_table = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
                 
-                if ($type == 'dropdown') {
-                    echo "<select name='$col' required>";
-                    echo "<option value='' disabled selected>Choose</option>";
-                    while ($r = mysqli_fetch_assoc($opts)) { 
-                        echo "<option value='".$r['name']."'>".$r['name']."</option>"; 
+                if (mysqli_num_rows($check_table) > 0) {
+                    // Fetch data
+                    $options = [];
+                    // FIX 3: Backticks added
+                    $opts_query = mysqli_query($conn, "SELECT * FROM `$table`");
+                    while ($r = mysqli_fetch_assoc($opts_query)) {
+                        $options[] = $r;
                     }
-                    echo "</select>";
-                } else {
-                    echo '<div class="checkbox-group">';
-                    if (mysqli_num_rows($opts) > 0) {
-                        while ($r = mysqli_fetch_assoc($opts)) { 
-                            echo '<label class="checkbox-option">';
-                            echo "<input type='checkbox' name='{$col}[]' value='".$r['name']."'>";
-                            echo $r['name'];
-                            echo '</label>';
+
+                    // FIX 4: Natural Sort (PC1, PC3, PC12)
+                    usort($options, function($a, $b) {
+                        return strnatcasecmp($a['name'], $b['name']);
+                    });
+
+                    // Render Inputs
+                    if ($type == 'dropdown') {
+                        echo "<select name='$col' required>";
+                        echo "<option value='' disabled selected>Choose</option>";
+                        foreach ($options as $r) { 
+                            echo "<option value='".$r['name']."'>".$r['name']."</option>"; 
                         }
-                    } else { echo "<span style='color:#999; font-size:13px;'>No options found.</span>"; }
-                    echo '</div>';
+                        echo "</select>";
+                    } else {
+                        echo '<div class="checkbox-group">';
+                        if (count($options) > 0) {
+                            foreach ($options as $r) { 
+                                echo '<label class="checkbox-option">';
+                                echo "<input type='checkbox' name='{$col}[]' value='".$r['name']."'>";
+                                echo $r['name'];
+                                echo '</label>';
+                            }
+                        } else { 
+                            echo "<span style='color:#999; font-size:13px;'>No options found.</span>"; 
+                        }
+                        echo '</div>';
+                    }
+                } else {
+                    echo "<p style='color:red; font-size:13px;'>Error: Configuration table not found.</p>";
                 }
                 echo '</div>';
             }
