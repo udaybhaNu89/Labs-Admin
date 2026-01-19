@@ -385,7 +385,7 @@ if (isset($_POST['btn_create_admin'])) {
         <div class="nav-links">
             <a href="admin_panel.php?view=dashboard" class="<?php echo ($current_view=='dashboard')?'active':''; ?>">View Complaints</a>
             <a href="admin_panel.php?view=config" class="<?php echo ($current_view=='config')?'active':''; ?>">Manage Options</a>
-            <a href="admin_panel.php?view=storage_management" class="<?php echo ($current_view=='storage_management')?'active':''; ?>">Storage Management</a>
+            <!-- <a href="admin_panel.php?view=storage_management" class="--> <?php echo ($current_view=='storage_management')?'active':''; ?> <!--">Storage Management</a> -->
             <a href="admin_panel.php?view=create_admin" class="<?php echo ($current_view=='create_admin')?'active':''; ?>">New Admin</a>
         </div>
         <div class="nav-links">
