@@ -1,11 +1,10 @@
 <?php
-session_start(); // 1. Start Session
+session_start();
 include 'db.php';
 
 $message = "";
 $msg_type = "";
 
-// 2. CHECK FOR SESSION MESSAGE
 if (isset($_SESSION['message'])) {
     $message = $_SESSION['message'];
     $msg_type = $_SESSION['msg_type'];
@@ -13,7 +12,6 @@ if (isset($_SESSION['message'])) {
     unset($_SESSION['msg_type']);
 }
 
-// 3. HANDLE FORM SUBMISSION
 if (isset($_POST['submit_complaint'])) {
     $cols = ""; $vals = "";
     
@@ -25,7 +23,7 @@ if (isset($_POST['submit_complaint'])) {
             $data = is_array($_POST[$col]) ? implode(", ", $_POST[$col]) : $_POST[$col];
         }
         $data = mysqli_real_escape_string($conn, $data);
-        $cols .= ", $col"; 
+        $cols .= ", `$col`"; 
         $vals .= ", '$data'";
     }
     
@@ -49,7 +47,6 @@ if (isset($_POST['submit_complaint'])) {
 <head>
     <title>Report Issue</title>
     <style>
-        /* THEME SETTINGS */
         :root { --primary: #009688; --primary-dark: #00796b; --bg-body: #f0f4f4; }
         body { background-color: var(--bg-body); font-family: 'Roboto', 'Segoe UI', Arial, sans-serif; margin: 0; padding: 30px 0; color: #202124; }
         .form-container { max-width: 640px; margin: 0 auto; }
@@ -69,13 +66,31 @@ if (isset($_POST['submit_complaint'])) {
         .btn-submit { background-color: var(--primary); color: #fff; border: none; border-radius: 4px; padding: 10px 24px; font-size: 14px; font-weight: 500; cursor: pointer; }
         .btn-submit:hover { background-color: var(--primary-dark); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
         .top-nav { text-align: right; max-width: 640px; margin: 0 auto 10px auto; }
-        .top-nav a { color: #5f6368; text-decoration: none; font-size: 13px; }
+        
+        /* NEW: Outline Button Style */
+        .btn-outline {
+            display: inline-block;
+            padding: 8px 16px;
+            border: 1px solid #ccc;
+            background-color: white;
+            color: #5f6368;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .btn-outline:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background-color: #f0fdfc;
+        }
     </style>
 </head>
 <body>
 
     <div class="top-nav">
-        <a href="index.php">Back to Home</a>
+        <a href="index.php" class="btn-outline">&larr; Back to Home</a>
     </div>
 
     <div class="form-container">
@@ -101,31 +116,25 @@ if (isset($_POST['submit_complaint'])) {
                 $col = $sec['column_name']; 
                 $type = $sec['input_type'];
                 
-                // FIX 1: Table Name Logic (Remove 'dyn_' to match admin_panel)
-                // e.g., 'dyn_room_no' -> 'room_no'
-                $table = substr($col, 4); 
+                // No prefix logic: Table name is the column name
+                $table = $col; 
                 
                 echo '<div class="form-card">';
                 echo '<label class="question-title">' . $title . ' <span class="req">*</span></label>';
                 
-                // FIX 2: Check if table exists to prevent crash
                 $check_table = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
                 
                 if (mysqli_num_rows($check_table) > 0) {
-                    // Fetch data
                     $options = [];
-                    // FIX 3: Backticks added
                     $opts_query = mysqli_query($conn, "SELECT * FROM `$table`");
                     while ($r = mysqli_fetch_assoc($opts_query)) {
                         $options[] = $r;
                     }
 
-                    // FIX 4: Natural Sort (PC1, PC3, PC12)
                     usort($options, function($a, $b) {
                         return strnatcasecmp($a['name'], $b['name']);
                     });
 
-                    // Render Inputs
                     if ($type == 'dropdown') {
                         echo "<select name='$col' required>";
                         echo "<option value='' disabled selected>Choose</option>";
@@ -148,7 +157,7 @@ if (isset($_POST['submit_complaint'])) {
                         echo '</div>';
                     }
                 } else {
-                    echo "<p style='color:red; font-size:13px;'>Error: Configuration table not found.</p>";
+                    echo "<p style='color:red; font-size:13px;'>Error: Configuration table '$table' not found.</p>";
                 }
                 echo '</div>';
             }

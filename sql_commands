@@ -1,62 +1,60 @@
--- 1. RESET DATABASE (Optional: Deletes old data to start fresh)
-DROP DATABASE IF EXISTS lab_db;
-CREATE DATABASE lab_db;
+-- 1. Create the Database
+CREATE DATABASE IF NOT EXISTS lab_db;
 USE lab_db;
 
--- ====================================================
--- 2. ADMIN TABLE (For Login)
--- ====================================================
-CREATE TABLE admins (
+-- 2. Create the Admins Table
+-- Tracks username, password, who created the admin, and when.
+CREATE TABLE IF NOT EXISTS admins (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(100) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    created_by VARCHAR(50) DEFAULT 'System',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Insert Default Admin User
--- Username: admin
--- Password: 123
-INSERT INTO admins (username, password) VALUES ('admin', '123');
+-- Insert a default admin account (Username: admin, Password: admin123)
+-- created_by is set to 'System' for the initial user.
+INSERT INTO admins (username, password, created_by) VALUES ('admin', 'admin', 'System');
 
--- ====================================================
--- 3. COMPLAINTS SYSTEM (For 'Manage Options' View)
--- ====================================================
-
--- A. Metadata Table: Stores the list of sections (e.g., "Room No", "PC No")
-CREATE TABLE dynamic_sections (
+-- 3. Create 'dynamic_sections' (Metadata for Complaint Form)
+-- Stores configuration for the dynamic fields on the complaint form.
+CREATE TABLE IF NOT EXISTS dynamic_sections (
     id INT AUTO_INCREMENT PRIMARY KEY,
     section_title VARCHAR(255) NOT NULL,
     column_name VARCHAR(255) NOT NULL,
     input_type VARCHAR(50) NOT NULL,
     display_order INT DEFAULT 0,
-    is_unique TINYINT(1) DEFAULT 0
+    is_unique TINYINT(1) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- B. Data Table: Stores the actual complaint form submissions
-CREATE TABLE complaints (
+-- 4. Create 'complaints' (Data Table for Issues)
+-- Stores actual complaint submissions.
+-- Note: Columns for dynamic sections are added automatically by the PHP script via ALTER TABLE.
+CREATE TABLE IF NOT EXISTS complaints (
     id INT AUTO_INCREMENT PRIMARY KEY,
     other_details TEXT,
     status VARCHAR(50) DEFAULT 'Pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ====================================================
--- 4. STORAGE MANAGEMENT SYSTEM (For 'Storage' View)
--- ====================================================
-
--- A. Metadata Table: Stores the list of storage sections (e.g., "Shelf", "Box")
-CREATE TABLE storage_sections (
+-- 5. Create 'storage_sections' (Metadata for Storage Form)
+-- Stores configuration for the dynamic fields on the storage inventory form.
+CREATE TABLE IF NOT EXISTS storage_sections (
     id INT AUTO_INCREMENT PRIMARY KEY,
     section_title VARCHAR(255) NOT NULL,
     column_name VARCHAR(255) NOT NULL,
     input_type VARCHAR(50) NOT NULL,
     display_order INT DEFAULT 0,
-    is_unique TINYINT(1) DEFAULT 0
+    is_unique TINYINT(1) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- B. Data Table: Stores the actual storage inventory items
-CREATE TABLE storage_unit (
+-- 6. Create 'storage_unit' (Data Table for Storage Logs)
+-- Stores actual inventory logs.
+-- Note: Columns for dynamic items are added automatically by the PHP script via ALTER TABLE.
+CREATE TABLE IF NOT EXISTS storage_unit (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    other_details TEXT,
-    status VARCHAR(50) DEFAULT 'Available',
+    status VARCHAR(50) DEFAULT 'Logged',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
