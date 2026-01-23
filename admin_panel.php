@@ -477,7 +477,7 @@ if (isset($_GET['delete_admin'])) {
                             <td class='col-status'>
                                 <?php if($row['status'] == 'Pending'): ?>
                                     <span class='status-pending'>Pending</span>
-                                    <a href='admin_panel.php?mark_complete=<?php echo $row['id']; ?>' class='btn-complete' title='Mark as Completed'>✅</a>
+                                    <a href='admin_panel.php?mark_complete=<?php echo $row['id']; ?>' class='btn-complete' title='Mark as Completed'>Mark as Completed</a>
                                 <?php else: ?>
                                     <span class='status-completed'>Completed</span>
                                 <?php endif; ?>
