@@ -2,59 +2,72 @@
 CREATE DATABASE IF NOT EXISTS lab_db;
 USE lab_db;
 
--- 2. Create the Admins Table
--- Tracks username, password, who created the admin, and when.
-CREATE TABLE IF NOT EXISTS admins (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL,
-    created_by VARCHAR(50) DEFAULT 'System',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- --------------------------------------------------------
+
+-- 2. Table: `admins`
+-- Stores admin accounts with creation tracking.
+CREATE TABLE IF NOT EXISTS `admins` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `username` varchar(50) NOT NULL UNIQUE,
+  `password` varchar(255) NOT NULL,
+  `created_by` varchar(50) DEFAULT 'System',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
 );
 
--- Insert a default admin account (Username: admin, Password: admin123)
--- created_by is set to 'System' for the initial user.
-INSERT INTO admins (username, password, created_by) VALUES ('admin', 'admin', 'System');
+-- Insert Default Admin (Username: admin, Password: admin123)
+INSERT INTO `admins` (`username`, `password`, `created_by`) VALUES
+('admin', 'admin', 'System');
 
--- 3. Create 'dynamic_sections' (Metadata for Complaint Form)
--- Stores configuration for the dynamic fields on the complaint form.
-CREATE TABLE IF NOT EXISTS dynamic_sections (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    section_title VARCHAR(255) NOT NULL,
-    column_name VARCHAR(255) NOT NULL,
-    input_type VARCHAR(50) NOT NULL,
-    display_order INT DEFAULT 0,
-    is_unique TINYINT(1) DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- --------------------------------------------------------
+
+-- 3. Table: `dynamic_sections`
+-- Stores configuration for the Complaint Form (e.g., "Room Number", "PC Number").
+CREATE TABLE IF NOT EXISTS `dynamic_sections` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `section_title` varchar(255) NOT NULL,
+  `column_name` varchar(255) NOT NULL,
+  `input_type` varchar(50) NOT NULL,
+  `display_order` int(11) DEFAULT 0,
+  `is_unique` tinyint(1) DEFAULT 0,
+  PRIMARY KEY (`id`)
 );
 
--- 4. Create 'complaints' (Data Table for Issues)
--- Stores actual complaint submissions.
--- Note: Columns for dynamic sections are added automatically by the PHP script via ALTER TABLE.
-CREATE TABLE IF NOT EXISTS complaints (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    other_details TEXT,
-    status VARCHAR(50) DEFAULT 'Pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- --------------------------------------------------------
+
+-- 4. Table: `complaints`
+-- Stores the actual complaints submitted by users.
+-- Note: Dynamic columns (like 'room_number') are added here automatically by PHP.
+CREATE TABLE IF NOT EXISTS `complaints` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `other_details` text DEFAULT NULL,
+  `status` varchar(50) DEFAULT 'Pending',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `issue_fixed_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`)
 );
 
--- 5. Create 'storage_sections' (Metadata for Storage Form)
--- Stores configuration for the dynamic fields on the storage inventory form.
-CREATE TABLE IF NOT EXISTS storage_sections (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    section_title VARCHAR(255) NOT NULL,
-    column_name VARCHAR(255) NOT NULL,
-    input_type VARCHAR(50) NOT NULL,
-    display_order INT DEFAULT 0,
-    is_unique TINYINT(1) DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- --------------------------------------------------------
+
+-- 5. Table: `storage_sections`
+-- Stores configuration for the Storage Hub input fields.
+CREATE TABLE IF NOT EXISTS `storage_sections` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `section_title` varchar(255) NOT NULL,
+  `column_name` varchar(255) NOT NULL,
+  `input_type` varchar(50) NOT NULL,
+  `display_order` int(11) DEFAULT 0,
+  PRIMARY KEY (`id`)
 );
 
--- 6. Create 'storage_unit' (Data Table for Storage Logs)
--- Stores actual inventory logs.
--- Note: Columns for dynamic items are added automatically by the PHP script via ALTER TABLE.
-CREATE TABLE IF NOT EXISTS storage_unit (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    status VARCHAR(50) DEFAULT 'Logged',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- --------------------------------------------------------
+
+-- 6. Table: `storage_unit`
+-- Stores the inventory logs/items.
+-- Note: Dynamic columns are added here automatically by PHP.
+CREATE TABLE IF NOT EXISTS `storage_unit` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `status` varchar(50) DEFAULT 'Logged',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
 );
