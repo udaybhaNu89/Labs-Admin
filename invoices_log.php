@@ -5,15 +5,15 @@ if (isset($_GET['delete_storage'])) {
     $id = intval($_GET['delete_storage']);
     mysqli_query($conn, "DELETE FROM storage_unit WHERE id = $id");
     $_SESSION['sys_msg'] = "Log Entry Deleted"; $_SESSION['sys_msg_color'] = "green";
-    header("Location: storage_logs.php"); exit();
+    header("Location: invoices_log.php"); exit();
 }
 
 include 'header.php';
 ?>
 
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-    <h1>Storage Inventory Log</h1>
-    <p><a href="storage_hub.php" class="btn-outline">&larr; Back to Hub</a></p>
+    <h1><strong>Invoices Logs</strong></h1>
+    <p><a href="invoices_hub.php" class="btn-outline">&larr; Back to Hub</a></p>
 </div>
 
 <?php

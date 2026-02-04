@@ -1,73 +1,153 @@
--- 1. Create the Database
-CREATE DATABASE IF NOT EXISTS lab_db;
-USE lab_db;
-
--- --------------------------------------------------------
-
--- 2. Table: `admins`
--- Stores admin accounts with creation tracking.
-CREATE TABLE IF NOT EXISTS `admins` (
+-- 1. Table to store admin credentials and permissions
+CREATE TABLE `admins` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `username` varchar(50) NOT NULL UNIQUE,
+  `username` varchar(255) NOT NULL,
   `password` varchar(255) NOT NULL,
-  `created_by` varchar(50) DEFAULT 'System',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `permissions` varchar(50) DEFAULT 'Full', -- Stores 'Full' or 'Partial'
+  `created_by` varchar(255) DEFAULT NULL,
+  `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 );
 
--- Insert Default Admin (Username: admin, Password: admin123)
-INSERT INTO `admins` (`username`, `password`, `created_by`) VALUES
-('admin', 'admin', 'System');
+-- Insert a default Super Admin (Username: admin, Password: admin123)
+INSERT INTO `admins` (`username`, `password`, `permissions`, `created_by`) VALUES 
+('admin', 'admin123', 'Full', 'System');
 
--- --------------------------------------------------------
+-- ---------------------------------------------------------------------
 
--- 3. Table: `dynamic_sections`
--- Stores configuration for the Complaint Form (e.g., "Room Number", "PC Number").
-CREATE TABLE IF NOT EXISTS `dynamic_sections` (
+-- 2. Configuration Tables
+-- A. Compliant form Sections
+CREATE TABLE `dynamic_sections` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `section_title` varchar(255) NOT NULL,
-  `column_name` varchar(255) NOT NULL,
-  `input_type` varchar(50) NOT NULL,
+  `column_name` varchar(255) NOT NULL,  -- Matches the column in 'complaints' table
+  `section_title` varchar(255) NOT NULL, -- Label shown to the user
+  `input_type` varchar(50) DEFAULT 'text',
   `display_order` int(11) DEFAULT 0,
-  `is_unique` tinyint(1) DEFAULT 0,
   PRIMARY KEY (`id`)
 );
 
--- --------------------------------------------------------
+-- Default fields required by your system logic
+INSERT INTO `dynamic_sections` (`column_name`, `section_title`, `input_type`, `display_order`) VALUES
+('lab_name', 'Lab Name', 'text', 1),
+('system_number', 'System Number', 'text', 2),
+('room_number', 'Room Number', 'text', 3),
+('email', 'Email', 'email', 4);
 
--- 4. Table: `complaints`
--- Stores the actual complaints submitted by users.
--- Note: Dynamic columns (like 'room_number') are added here automatically by PHP.
-CREATE TABLE IF NOT EXISTS `complaints` (
+-- B. Lab Personnal Sections
+CREATE TABLE `labs_sections` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `other_details` text DEFAULT NULL,
+  `column_name` varchar(255) NOT NULL,
+  `section_title` varchar(255) NOT NULL,
+  `display_order` int(11) DEFAULT 0,
+  PRIMARY KEY (`id`)
+);
+
+-- Default personnel fields
+INSERT INTO `labs_sections` (`column_name`, `section_title`, `display_order`) VALUES
+('lab_incharge', 'Lab Incharge', 1),
+('programmer', 'Programmer', 2);
+
+-- C. System Hardware Sections
+CREATE TABLE `systems_sections` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `column_name` varchar(255) NOT NULL,
+  `section_title` varchar(255) NOT NULL,
+  PRIMARY KEY (`id`)
+);
+
+-- Default hardware fields
+INSERT INTO `systems_sections` (`column_name`, `section_title`) VALUES
+('os', 'Operating System'),
+('processor', 'Processor'),
+('ram', 'RAM'),
+('monitor', 'Monitor'),
+('keyboard', 'Keyboard'),
+('mouse', 'Mouse');
+
+-- 3. Complaints & Logs
+-- Main active complaints table
+CREATE TABLE `complaints` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `parent_id` int(11) DEFAULT NULL,
+  `other_details` text,
   `status` varchar(50) DEFAULT 'Pending',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   `issue_fixed_at` datetime DEFAULT NULL,
+  `partially_completed_at` datetime DEFAULT NULL,
+  -- Dynamic columns (Must match 'dynamic_sections')
+  `lab_name` varchar(255),
+  `system_number` varchar(255),
+  `room_number` varchar(255),
+  `email` varchar(255),
   PRIMARY KEY (`id`)
 );
 
--- --------------------------------------------------------
-
--- 5. Table: `storage_sections`
--- Stores configuration for the Storage Hub input fields.
-CREATE TABLE IF NOT EXISTS `storage_sections` (
+-- Log table for history and updates (Structure matches 'complaints')
+CREATE TABLE `complaints_log` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `section_title` varchar(255) NOT NULL,
-  `column_name` varchar(255) NOT NULL,
-  `input_type` varchar(50) NOT NULL,
-  `display_order` int(11) DEFAULT 0,
+  `parent_id` int(11) DEFAULT NULL,
+  `other_details` text,
+  `status` varchar(50) DEFAULT 'Pending',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `issue_fixed_at` datetime DEFAULT NULL,
+  `partially_completed_at` datetime DEFAULT NULL,
+  -- Dynamic columns
+  `lab_name` varchar(255),
+  `system_number` varchar(255),
+  `room_number` varchar(255),
+  `email` varchar(255),
   PRIMARY KEY (`id`)
 );
 
--- --------------------------------------------------------
-
--- 6. Table: `storage_unit`
--- Stores the inventory logs/items.
--- Note: Dynamic columns are added here automatically by PHP.
-CREATE TABLE IF NOT EXISTS `storage_unit` (
+-- 4. Lab Management & Systems
+-- A. Master Lab List
+CREATE TABLE `lab_name` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `status` varchar(50) DEFAULT 'Logged',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `name` varchar(255) NOT NULL,       -- e.g., 'Lab 1'
+  `table_lab_name` varchar(255) NOT NULL, -- e.g., 'lab_1_systems'
+  PRIMARY KEY (`id`)
+);
+
+-- Example Data
+INSERT INTO `lab_name` (`name`, `table_lab_name`) VALUES 
+('Lab 1', 'lab_1_systems'),
+('Lab 2', 'lab_2_systems');
+
+-- B. Lab Unit Details
+CREATE TABLE `labs_unit` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `lab_name` varchar(255) NOT NULL,
+  -- Dynamic columns derived from 'labs_sections'
+  `lab_incharge` varchar(255),
+  `programmer` varchar(255),
+  PRIMARY KEY (`id`)
+);
+
+-- C. Specific System Tables
+-- Important: You must create one table for each lab you defined in lab_name
+-- Example Table for 'Lab 1'
+CREATE TABLE `lab_1_systems` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `system_number` varchar(255) NOT NULL,
+  -- Dynamic columns derived from 'systems_sections'
+  `os` varchar(255),
+  `processor` varchar(255),
+  `ram` varchar(255),
+  `monitor` varchar(255),
+  `keyboard` varchar(255),
+  `mouse` varchar(255),
+  PRIMARY KEY (`id`)
+);
+
+-- Example Table for 'Lab 2'
+CREATE TABLE `lab_2_systems` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `system_number` varchar(255) NOT NULL,
+  `os` varchar(255),
+  `processor` varchar(255),
+  `ram` varchar(255),
+  `monitor` varchar(255),
+  `keyboard` varchar(255),
+  `mouse` varchar(255),
   PRIMARY KEY (`id`)
 );

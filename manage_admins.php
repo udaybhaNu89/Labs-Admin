@@ -1,15 +1,30 @@
 <?php
 require 'auth_session.php';
 
+// =============================================================
+// AUTO-UPDATE DB: Add permissions column if missing (Safety Check)
+// =============================================================
+$check_col = mysqli_query($conn, "SHOW COLUMNS FROM admins LIKE 'permissions'");
+if (mysqli_num_rows($check_col) == 0) {
+    mysqli_query($conn, "ALTER TABLE admins ADD COLUMN permissions VARCHAR(50) DEFAULT 'Full'");
+}
+// =============================================================
+
 if (isset($_POST['btn_create_admin'])) {
     $u = $_POST['new_username']; $p = $_POST['new_password'];
     $creator = $_SESSION['admin_user'];
+    
+    // --- PERMISSION LOGIC ---
+    // Directly capture the radio button value (defaults to 'Full' if missing)
+    $perms = isset($_POST['perm_type']) ? $_POST['perm_type'] : 'Full';
+    // ------------------------
+
     $check = mysqli_query($conn, "SELECT * FROM admins WHERE username = '$u'");
     if(mysqli_num_rows($check) > 0) { 
         $_SESSION['sys_msg'] = "Username taken!"; $_SESSION['sys_msg_color'] = "red";
     } else {
-        mysqli_query($conn, "INSERT INTO admins (username, password, created_by) VALUES ('$u', '$p', '$creator')");
-        $_SESSION['sys_msg'] = "New Admin Created!"; $_SESSION['sys_msg_color'] = "green";
+        mysqli_query($conn, "INSERT INTO admins (username, password, created_by, permissions) VALUES ('$u', '$p', '$creator', '$perms')");
+        $_SESSION['sys_msg'] = "New Admin Created ($perms Permission)!"; $_SESSION['sys_msg_color'] = "green";
     }
     header("Location: manage_admins.php?view=list"); exit(); 
 }
@@ -51,21 +66,20 @@ $view = $_GET['view'] ?? 'menu';
     <table>
         <tr>
             <th>Admin Username</th>
-            <th>Current Password</th>
+            <th>Permission</th>
             <th>Created By</th>
-            <th>Created At</th>
             <th>Action</th>
         </tr>
         <?php
         $res = mysqli_query($conn, "SELECT * FROM admins");
         while ($row = mysqli_fetch_assoc($res)) {
             $is_self = ($row['username'] === $_SESSION['admin_user']);
+            $perm_display = isset($row['permissions']) ? $row['permissions'] : 'Full';
             
             echo "<tr>";
-            echo "<td>" . $row['username'] . "</td>";
-            echo "<td><span class='password-text masked'>********</span><span class='password-text real' style='display:none;'>" . $row['password'] . "</span><button class='btn-show' onclick='togglePass(this)'>Show</button></td>";
-            echo "<td>" . (isset($row['created_by']) ? $row['created_by'] : '-') . "</td>";
-            echo "<td>" . (isset($row['created_at']) ? $row['created_at'] : '-') . "</td>";
+            echo "<td>" . htmlspecialchars($row['username']) . "</td>";
+            echo "<td><span style='background:#e3f2fd; color:#1565c0; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:bold;'>" . htmlspecialchars($perm_display) . "</span></td>";
+            echo "<td>" . (isset($row['created_by']) ? htmlspecialchars($row['created_by']) : '-') . "</td>";
             
             echo "<td>";
             echo "<form method='POST' style='display:inline;'>";
@@ -89,8 +103,27 @@ $view = $_GET['view'] ?? 'menu';
         <form method="POST">
             <input type="text" name="new_username" placeholder="New Username" required>
             <input type="password" name="new_password" placeholder="New Password" required>
+            
+            <div style="margin-top: 15px; text-align: left; background: #fff; border: 1px solid #eee; padding: 15px; border-radius: 4px;">
+                <p style="margin: 0 0 10px 0; font-size: 14px; color: #555; font-weight: bold;">Select Permission Level:</p>
+                
+                <div style="background: #f9f9f9; padding: 10px; border-left: 3px solid var(--primary); border-radius: 0 4px 4px 0;">
+                    <label style="display: block; margin-bottom: 10px; font-size: 13px; cursor: pointer;">
+                        <input type="radio" name="perm_type" value="Full" checked style="width: auto; margin-right: 8px; accent-color: var(--primary);"> 
+                        <strong>Full Permission</strong> 
+                        <div style="color: #777; margin-left: 24px; font-size: 11px;">Can manage admins, edit forms, and delete data.</div>
+                    </label>
+                    
+                    <label style="display: block; font-size: 13px; cursor: pointer;">
+                        <input type="radio" name="perm_type" value="Partial" style="width: auto; margin-right: 8px; accent-color: var(--primary);"> 
+                        <strong>Partial Permission</strong>
+                        <div style="color: #777; margin-left: 24px; font-size: 11px;">View only access. Cannot delete data or manage admins.</div>
+                    </label>
+                </div>
+            </div>
             <input type="submit" name="btn_create_admin" value="Create Admin" class="btn-block" style="margin-top:15px;">
         </form>
+
         <p style="text-align:center; margin-top:15px;">
             <a href="manage_admins.php?view=menu" class="btn-outline">&larr; Back to Menu</a>
         </p>

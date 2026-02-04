@@ -5,7 +5,6 @@ include 'db.php';
 // ==========================================
 // CONFIGURATION
 // ==========================================
-// Replace this with the actual admin email address
 $admin_email_address = "tonystark20201919@gmail.com"; 
 // ==========================================
 
@@ -19,6 +18,49 @@ if (isset($_SESSION['message'])) {
     unset($_SESSION['msg_type']);
 }
 
+// =================================================================
+// 1. AUTO-HEAL DATABASE (Ensures Columns Exist in BOTH tables)
+// =================================================================
+// Checks dynamic_sections and adds missing columns to 'complaints' and 'complaints_log'
+$sec_check_res = mysqli_query($conn, "SELECT column_name FROM dynamic_sections");
+if ($sec_check_res) {
+    while ($row = mysqli_fetch_assoc($sec_check_res)) {
+        $col_name = $row['column_name'];
+        
+        // Check 'complaints' table
+        $check_col_main = mysqli_query($conn, "SHOW COLUMNS FROM complaints LIKE '$col_name'");
+        if (mysqli_num_rows($check_col_main) == 0) {
+            mysqli_query($conn, "ALTER TABLE complaints ADD COLUMN `$col_name` VARCHAR(255) DEFAULT NULL");
+        }
+
+        // Check 'complaints_log' table
+        $check_col_log = mysqli_query($conn, "SHOW COLUMNS FROM complaints_log LIKE '$col_name'");
+        if (mysqli_num_rows($check_col_log) == 0) {
+            mysqli_query($conn, "ALTER TABLE complaints_log ADD COLUMN `$col_name` VARCHAR(255) DEFAULT NULL");
+        }
+    }
+}
+// =================================================================
+
+// --- 2. FETCH LAB CONFIGURATION (For Dynamic JS) ---
+$lab_config_data = [];
+$tbl_check = mysqli_query($conn, "SHOW TABLES LIKE 'lab_series_config'");
+if (mysqli_num_rows($tbl_check) > 0) {
+    $config_res = mysqli_query($conn, "SELECT * FROM lab_series_config");
+    if ($config_res) {
+        while ($row = mysqli_fetch_assoc($config_res)) {
+            $lab_config_data[$row['lab_name']] = [
+                'prefix'  => $row['prefix'],
+                'start'   => (int)$row['start_no'],
+                'end'     => (int)$row['end_no'],
+                'padding' => (int)$row['padding']
+            ];
+        }
+    }
+}
+$json_lab_config = json_encode($lab_config_data);
+// ----------------------------------------------------
+
 if (isset($_POST['submit_complaint'])) {
     $cols = ""; $vals = "";
     $valid = true; 
@@ -27,14 +69,14 @@ if (isset($_POST['submit_complaint'])) {
     $email_subject = "New Lab Complaint Submitted";
     $email_body = "A new complaint has been submitted via the Lab Admin System.\n\n--- Details ---\n";
 
-    // Fetch dynamic sections to build query and email body
+    // Fetch dynamic sections
     $res = mysqli_query($conn, "SELECT * FROM dynamic_sections ORDER BY display_order ASC");
     while ($sec = mysqli_fetch_assoc($res)) {
         $col = $sec['column_name'];
         $title = $sec['section_title'];
         $type = $sec['input_type'];
         
-        $raw_data = ""; // Data for Email (Unescaped)
+        $raw_data = ""; 
         
         if (isset($_POST[$col])) {
             $raw_data = is_array($_POST[$col]) ? implode(", ", $_POST[$col]) : $_POST[$col];
@@ -50,10 +92,8 @@ if (isset($_POST['submit_complaint'])) {
             }
         }
         
-        // Add to Email Body
         $email_body .= "$title: $raw_data\n";
 
-        // Prepare for Database (Escaped)
         $db_data = mysqli_real_escape_string($conn, $raw_data);
         $cols .= ", `$col`"; 
         $vals .= ", '$db_data'";
@@ -63,28 +103,41 @@ if (isset($_POST['submit_complaint'])) {
         $raw_other = $_POST['other_details'];
         $db_other = mysqli_real_escape_string($conn, $raw_other);
         
-        // Finish Email Body
         $email_body .= "Other Details: $raw_other\n";
         $email_body .= "----------------\n";
         $email_body .= "Date: " . date("Y-m-d H:i:s");
 
-        $sql = "INSERT INTO complaints (other_details $cols) VALUES ('$db_other' $vals)";
+        // 1. INSERT INTO COMPLAINTS (Main Table)
+        $sql = "INSERT INTO complaints (other_details, status, created_at $cols) VALUES ('$db_other', 'Pending', NOW() $vals)";
         
-        if (mysqli_query($conn, $sql)) { 
-            
-            // --- SEND EMAIL LOGIC ---
-            $headers = "From: tonystark20201919@gmail.com"; // Change to a valid sender for your domain
-            
-            // The @ symbol suppresses errors if the mail server isn't configured (common on localhost)
-            @mail($admin_email_address, $email_subject, $email_body, $headers);
-            // ------------------------
+        try {
+            if (mysqli_query($conn, $sql)) { 
+                
+                // 2. GET THE NEW ID & UPDATE PARENT_ID
+                $new_id = mysqli_insert_id($conn);
+                mysqli_query($conn, "UPDATE complaints SET parent_id = $new_id WHERE id = $new_id");
 
-            $_SESSION['message'] = "Your response has been recorded and Admin notified."; 
-            $_SESSION['msg_type'] = "success";
-            header("Location: complaint.php"); 
-            exit(); 
-        } else { 
-            $message = "Error: " . mysqli_error($conn); 
+                // 3. INSERT INTO COMPLAINTS_LOG (Log Table)
+                $sql_log = "INSERT INTO complaints_log (other_details, status, created_at, parent_id $cols) VALUES ('$db_other', 'Pending', NOW(), '$new_id' $vals)";
+                mysqli_query($conn, $sql_log);
+
+                // --- SEND EMAIL ---
+                $headers = "From: no-reply@labsystem.com"; 
+                @mail($admin_email_address, $email_subject, $email_body, $headers);
+                // ------------------
+
+                $_SESSION['message'] = "Your response has been recorded."; 
+                $_SESSION['msg_type'] = "success";
+                header("Location: complaint.php"); 
+                exit(); 
+            }
+        } catch (mysqli_sql_exception $e) { 
+            // Handle specific errors
+            if (strpos($e->getMessage(), "Unknown column") !== false) {
+                 $message = "Database Error: Missing column. Attempting auto-fix on next load. (" . $e->getMessage() . ")";
+            } else {
+                 $message = "Error: " . $e->getMessage(); 
+            }
             $msg_type = "error";
         }
     }
@@ -106,8 +159,8 @@ if (isset($_POST['submit_complaint'])) {
         p.desc { font-size: 14px; color: #5f6368; margin-top: 0; }
         label.question-title { font-size: 16px; font-weight: 500; display: block; margin-bottom: 15px; }
         .req { color: #d93025; margin-left: 4px; }
-        select, textarea, input[type="text"], input[type="email"] { width: 100%; padding: 10px 0; border: none; border-bottom: 1px solid #e0e0e0; background: transparent; font-family: inherit; font-size: 14px; outline: none; transition: 0.3s; }
-        select:focus, textarea:focus, input[type="text"]:focus, input[type="email"]:focus { border-bottom: 2px solid var(--primary); background-color: #fafafa; }
+        select, textarea, input[type="text"], input[type="number"], input[type="email"], input[type="date"] { width: 100%; padding: 10px 0; border: none; border-bottom: 1px solid #e0e0e0; background: transparent; font-family: inherit; font-size: 14px; outline: none; transition: 0.3s; }
+        select:focus, textarea:focus, input[type="text"]:focus, input[type="number"]:focus, input[type="email"]:focus, input[type="date"]:focus { border-bottom: 2px solid var(--primary); background-color: #fafafa; }
         .checkbox-group { display: flex; flex-direction: column; gap: 10px; }
         .checkbox-option { display: flex; align-items: center; font-size: 14px; cursor: pointer; }
         input[type="checkbox"] { margin-right: 15px; width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
@@ -149,12 +202,22 @@ if (isset($_POST['submit_complaint'])) {
                 echo '<div class="form-card">';
                 echo '<label class="question-title">' . $title . ' <span class="req">*</span></label>';
                 
-                if ($type == 'email') {
-                    // Render Email Input
+                if ($type == 'text') {
+                    echo "<input type='text' name='$col' placeholder='Your answer' required>";
+                }
+                elseif ($type == 'number') {
+                    echo "<input type='number' name='$col' placeholder='Your answer' required>";
+                }
+                elseif ($type == 'email') {
                     echo "<input type='email' name='$col' placeholder='Your email' required>";
-                } 
+                }
+                elseif ($type == 'date') {
+                    echo "<input type='date' name='$col' required>";
+                }
+                elseif ($type == 'textarea') {
+                    echo "<textarea name='$col' placeholder='Your answer' required></textarea>";
+                }
                 else {
-                    // Render Dropdown/Checkbox (Needs options table)
                     $check_table = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
                     if (mysqli_num_rows($check_table) > 0) {
                         $options = [];
@@ -198,6 +261,46 @@ if (isset($_POST['submit_complaint'])) {
             This content is created by the Lab Admin.
         </center>
     </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        
+        // Pass PHP Config to JS safely (Using the JSON from Database)
+        const labConfig = <?php echo $json_lab_config ?: '{}'; ?>;
+
+        const labSelect = document.querySelector('select[name="lab_name"]');
+        const sysSelect = document.querySelector('select[name="system_number"]');
+
+        if (labSelect && sysSelect) {
+            labSelect.addEventListener('change', function() {
+                const selectedLab = this.value;
+                const config = labConfig[selectedLab];
+
+                // Reset System Dropdown
+                sysSelect.innerHTML = '<option value="" disabled selected>Select System</option>';
+
+                if (config) {
+                    // Generate Series
+                    for (let i = config.start; i <= config.end; i++) {
+                        let numStr = i.toString().padStart(config.padding, '0'); 
+                        let code = config.prefix + numStr;
+                        
+                        let opt = document.createElement('option');
+                        opt.value = code;
+                        opt.textContent = code;
+                        sysSelect.appendChild(opt);
+                    }
+                } else {
+                    // Fallback
+                    let opt = document.createElement('option');
+                    opt.value = "Other";
+                    opt.textContent = "Other / Not Listed";
+                    sysSelect.appendChild(opt);
+                }
+            });
+        }
+    });
+    </script>
 
 </body>
 </html>

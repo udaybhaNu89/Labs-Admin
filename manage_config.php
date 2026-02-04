@@ -3,8 +3,15 @@ require 'auth_session.php';
 
 $meta_table = "dynamic_sections";
 $data_table = "complaints"; 
+$log_table  = "complaints_log"; 
+
+// --- DEFINING STATIC SECTIONS (Cannot be removed) ---
+$protected_cols = ['lab_name', 'system_number'];
+// ----------------------------------------------------
 
 // --- CONFIG ACTIONS ---
+
+// 1. MOVE SECTION (Reorder)
 if (isset($_GET['move_section']) && isset($_GET['dir'])) {
     $id = intval($_GET['move_section']); $dir = $_GET['dir'];
     $curr = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, display_order FROM $meta_table WHERE id = $id"));
@@ -15,10 +22,14 @@ if (isset($_GET['move_section']) && isset($_GET['dir'])) {
         $t_id = $target['id']; $t_order = $target['display_order'];
         mysqli_query($conn, "UPDATE $meta_table SET display_order = $t_order WHERE id = $id");
         mysqli_query($conn, "UPDATE $meta_table SET display_order = $curr_order WHERE id = $t_id");
+        
+        $_SESSION['sys_msg'] = "Order updated successfully"; 
+        $_SESSION['sys_msg_color'] = "green";
     }
     header("Location: manage_config.php"); exit();
 }
 
+// 2. CREATE NEW SECTION
 if (isset($_POST['create_new_section'])) {
     $title = trim($_POST['section_title']); 
     $title_safe = mysqli_real_escape_string($conn, $title);
@@ -27,13 +38,13 @@ if (isset($_POST['create_new_section'])) {
     
     $check = mysqli_query($conn, "SELECT id FROM $meta_table WHERE section_title = '$title_safe'");
     if (mysqli_num_rows($check) > 0) {
-        $_SESSION['sys_msg'] = "$title already exists"; $_SESSION['sys_msg_color'] = "red";
+        $_SESSION['sys_msg'] = "Error: Section '$title' already exists"; 
+        $_SESSION['sys_msg_color'] = "red";
     } else {
         $clean_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $title)); $clean_name = trim($clean_name, '_');
         $col = $clean_name; $tbl = $clean_name; 
         
         $col_check = mysqli_query($conn, "SHOW COLUMNS FROM `$data_table` LIKE '$col'");
-        // Only check for table existence if creating a dropdown/checkbox (which need tables)
         $tbl_exists = false;
         if ($type != 'email') {
             $tbl_check = mysqli_query($conn, "SHOW TABLES LIKE '$tbl'");
@@ -41,29 +52,42 @@ if (isset($_POST['create_new_section'])) {
         }
 
         if(mysqli_num_rows($col_check) > 0 || $tbl_exists) {
-             $_SESSION['sys_msg'] = "Error: Name '$clean_name' is already used."; $_SESSION['sys_msg_color'] = "red";
+             $_SESSION['sys_msg'] = "Error: Database field '$clean_name' is already in use."; 
+             $_SESSION['sys_msg_color'] = "red";
              header("Location: manage_config.php"); exit();
         }
 
         $max = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MAX(display_order) as m FROM $meta_table")); $next = $max['m'] + 1;
         
         // Insert Metadata
-        mysqli_query($conn, "INSERT INTO $meta_table (section_title, column_name, input_type, display_order, is_unique) VALUES ('$title_safe', '$col', '$type', $next, $is_unique)");
-        
-        // Create Data Column
-        mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` VARCHAR(255)");
+        if(mysqli_query($conn, "INSERT INTO $meta_table (section_title, column_name, input_type, display_order, is_unique) VALUES ('$title_safe', '$col', '$type', $next, $is_unique)")) {
+            
+            try {
+                mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` VARCHAR(255)");
+                mysqli_query($conn, "ALTER TABLE `$log_table` ADD COLUMN `$col` VARCHAR(255)");
 
-        // Create Options Table ONLY for Dropdown/Checkbox
-        if ($type != 'email') {
-            if ($is_unique != 1) { mysqli_query($conn, "CREATE TABLE `$tbl` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100), UNIQUE(name))"); } 
-            else { mysqli_query($conn, "CREATE TABLE `$tbl` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100))"); }
+                if ($type != 'email') {
+                    if ($is_unique != 1) { mysqli_query($conn, "CREATE TABLE `$tbl` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100), UNIQUE(name))"); } 
+                    else { mysqli_query($conn, "CREATE TABLE `$tbl` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100))"); }
+                }
+
+                $_SESSION['sys_msg'] = "Section '$title' created successfully"; 
+                $_SESSION['sys_msg_color'] = "green";
+
+            } catch (Exception $e) {
+                $_SESSION['sys_msg'] = "Database Error: " . $e->getMessage();
+                $_SESSION['sys_msg_color'] = "red";
+            }
+
+        } else {
+            $_SESSION['sys_msg'] = "Error: Could not save section metadata."; 
+            $_SESSION['sys_msg_color'] = "red";
         }
-        
-        $_SESSION['sys_msg'] = "Section Created Successfully"; $_SESSION['sys_msg_color'] = "green";
     }
     header("Location: manage_config.php"); exit();
 }
 
+// 3. RENAME SECTION
 if (isset($_POST['rename_section'])) {
     $id = $_POST['target_id']; $new_name = trim($_POST['new_section_name']);
     $new_name_safe = mysqli_real_escape_string($conn, $new_name);
@@ -73,46 +97,76 @@ if (isset($_POST['rename_section'])) {
 
     $check = mysqli_query($conn, "SELECT id FROM $meta_table WHERE section_title = '$new_name_safe' AND id != $id");
     if (mysqli_num_rows($check) > 0) {
-        $_SESSION['sys_msg'] = "$old_name can't be renamed as $new_name, because it exists"; $_SESSION['sys_msg_color'] = "red";
+        $_SESSION['sys_msg'] = "Error: '$new_name' already exists."; 
+        $_SESSION['sys_msg_color'] = "red";
     } else {
         $curr_query = mysqli_query($conn, "SELECT column_name FROM $meta_table WHERE id = $id");
         $curr_row = mysqli_fetch_assoc($curr_query);
         $old_col = $curr_row['column_name'];
         $new_col = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $new_name)); $new_col = trim($new_col, '_');
         
-        if ($old_col != $new_col) {
-            mysqli_query($conn, "ALTER TABLE `$data_table` CHANGE `$old_col` `$new_col` VARCHAR(255)");
-            // Rename options table only if it exists (not for email)
-            if ($type != 'email') {
-                mysqli_query($conn, "RENAME TABLE `$old_col` TO `$new_col`");
+        try {
+            if ($old_col != $new_col) {
+                mysqli_query($conn, "ALTER TABLE `$data_table` CHANGE `$old_col` `$new_col` VARCHAR(255)");
+                mysqli_query($conn, "ALTER TABLE `$log_table` CHANGE `$old_col` `$new_col` VARCHAR(255)");
+
+                if ($type != 'email') {
+                    mysqli_query($conn, "RENAME TABLE `$old_col` TO `$new_col`");
+                }
             }
+            mysqli_query($conn, "UPDATE $meta_table SET section_title = '$new_name_safe', column_name = '$new_col' WHERE id = $id");
+            
+            $_SESSION['sys_msg'] = "Renamed successfully"; 
+            $_SESSION['sys_msg_color'] = "green";
+
+        } catch (Exception $e) {
+            $_SESSION['sys_msg'] = "Error updating database columns: " . $e->getMessage();
+            $_SESSION['sys_msg_color'] = "red";
         }
-        mysqli_query($conn, "UPDATE $meta_table SET section_title = '$new_name_safe', column_name = '$new_col' WHERE id = $id");
-        $_SESSION['sys_msg'] = "Renamed Successfully"; $_SESSION['sys_msg_color'] = "green";
     }
     header("Location: manage_config.php"); exit();
 }
 
+// 4. REMOVE SECTION
 if (isset($_GET['remove_section'])) {
     $id = $_GET['remove_section'];
     $data = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM $meta_table WHERE id = $id"));
     if ($data) {
         $col = $data['column_name']; 
+        
+        if (in_array($col, $protected_cols)) {
+            $_SESSION['sys_msg'] = "Error: '$col' is a protected system section.";
+            $_SESSION['sys_msg_color'] = "red";
+            header("Location: manage_config.php"); exit();
+        }
+
         $tbl = $col; 
         $type = $data['input_type'];
+        $title = $data['section_title'];
 
-        // Drop options table only if not email
-        if ($type != 'email') {
-            mysqli_query($conn, "DROP TABLE IF EXISTS `$tbl`"); 
+        try {
+            if ($type != 'email') {
+                mysqli_query($conn, "DROP TABLE IF EXISTS `$tbl`"); 
+            }
+            mysqli_query($conn, "ALTER TABLE `$data_table` DROP COLUMN `$col`");
+            mysqli_query($conn, "ALTER TABLE `$log_table` DROP COLUMN `$col`");
+            mysqli_query($conn, "DELETE FROM $meta_table WHERE id = $id"); 
+            
+            $_SESSION['sys_msg'] = "Section '$title' removed successfully"; 
+            $_SESSION['sys_msg_color'] = "green";
+
+        } catch (Exception $e) {
+            $_SESSION['sys_msg'] = "Error removing section: " . $e->getMessage();
+            $_SESSION['sys_msg_color'] = "red";
         }
-        
-        try { mysqli_query($conn, "ALTER TABLE `$data_table` DROP COLUMN `$col`"); } catch (Exception $e) {}
-        mysqli_query($conn, "DELETE FROM $meta_table WHERE id = $id"); 
+    } else {
+        $_SESSION['sys_msg'] = "Error: Section not found.";
+        $_SESSION['sys_msg_color'] = "red";
     }
-    $_SESSION['sys_msg'] = "Section Removed"; $_SESSION['sys_msg_color'] = "red";
     header("Location: manage_config.php"); exit();
 }
 
+// 5. ADD OPTION (Modified for Lab Name)
 if (isset($_POST['add_option'])) {
     $target_col = $_POST['target_col']; $tbl = $target_col; 
     $raw_input = trim($_POST['new_val']); $items_to_add = [];
@@ -120,34 +174,130 @@ if (isset($_POST['add_option'])) {
     $section_name = $sec_info['section_title'];
     $enforce_unique = ($sec_info['is_unique'] == 0); 
 
-    if (preg_match('/^([a-zA-Z0-9\.-]*?)(\d+)-(\d+)$/', $raw_input, $matches)) {
-        $prefix = $matches[1]; $start = (int)$matches[2]; $end = (int)$matches[3];
-        if ($start <= $end) { for ($i = $start; $i <= $end; $i++) { $items_to_add[] = $prefix . $i; } }
-    } else { $items_to_add[] = $raw_input; }
+    // --- NEW: Handle Lab Name Specific Logic ---
+    $extra_cols = "";
+    $extra_vals = "";
+    $lab_table_created = false;
+
+    if ($target_col == 'lab_name') {
+        // 1. Generate table_lab_name (Aryabhatta Lab -> aryabhatta_lab)
+        $tbl_lab_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $raw_input));
+        $tbl_lab_name = trim($tbl_lab_name, '_');
+        
+        $extra_cols = ", table_lab_name";
+        $extra_vals = ", '$tbl_lab_name'";
+
+        // 2. Automatically Create the Table for this Lab
+        $create_lab_sql = "CREATE TABLE IF NOT EXISTS `$tbl_lab_name` (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            system_number VARCHAR(100) NOT NULL,
+            os VARCHAR(100),
+            config_details TEXT,
+            UNIQUE(system_number)
+        )";
+        if(mysqli_query($conn, $create_lab_sql)) {
+            $lab_table_created = true;
+        }
+    }
+    // -------------------------------------------
+
+    // --- NEW LOGIC: LINKING SYSTEMS TO LABS ---
+    $lab_link_success = false;
+    
+    // Check if we are adding to 'system_number' AND a lab was selected
+    if ($target_col == 'system_number' && !empty($_POST['linked_lab_name'])) {
+        $linked_lab = mysqli_real_escape_string($conn, $_POST['linked_lab_name']);
+        
+        // Parse range input (e.g., ARY1-134)
+        if (preg_match('/^([a-zA-Z0-9\.-]*?)(\d+)-(\d+)$/', $raw_input, $matches)) {
+            $prefix = $matches[1]; 
+            $start = (int)$matches[2]; 
+            $end = (int)$matches[3];
+            $padding = strlen((string)$end);
+            
+            // Save Configuration
+            $config_sql = "INSERT INTO lab_series_config (lab_name, prefix, start_no, end_no, padding) 
+                           VALUES ('$linked_lab', '$prefix', $start, $end, $padding)
+                           ON DUPLICATE KEY UPDATE prefix='$prefix', start_no=$start, end_no=$end, padding=$padding";
+            mysqli_query($conn, $config_sql);
+            $lab_link_success = true;
+
+            // Generate items
+            if ($start <= $end) { 
+                for ($i = $start; $i <= $end; $i++) { 
+                    $padded_num = str_pad($i, $padding, '0', STR_PAD_LEFT);
+                    $items_to_add[] = $prefix . $padded_num; 
+                } 
+            }
+        } else {
+            $items_to_add[] = $raw_input;
+        }
+    } 
+    else {
+        // Standard Range Logic
+        if (preg_match('/^([a-zA-Z0-9\.-]*?)(\d+)-(\d+)$/', $raw_input, $matches)) {
+            $prefix = $matches[1]; $start = (int)$matches[2]; $end = (int)$matches[3];
+            if ($start <= $end) { for ($i = $start; $i <= $end; $i++) { $items_to_add[] = $prefix . $i; } }
+        } else { $items_to_add[] = $raw_input; }
+    }
     
     $duplicates_found = [];
+    $success_count = 0;
+
     foreach ($items_to_add as $val) {
         $val_safe = mysqli_real_escape_string($conn, $val);
-        if ($enforce_unique) {
-            $check = mysqli_query($conn, "SELECT id FROM `$tbl` WHERE name = '$val_safe'");
-            if (mysqli_num_rows($check) > 0) { $duplicates_found[] = $val; } 
-            else { mysqli_query($conn, "INSERT INTO `$tbl` (name) VALUES ('$val_safe')"); }
-        } else { mysqli_query($conn, "INSERT INTO `$tbl` (name) VALUES ('$val_safe')"); }
+        try {
+            if ($enforce_unique) {
+                $check = mysqli_query($conn, "SELECT id FROM `$tbl` WHERE name = '$val_safe'");
+                if (mysqli_num_rows($check) > 0) { $duplicates_found[] = $val; } 
+                else { 
+                    // MODIFIED: Include extra columns (like table_lab_name)
+                    mysqli_query($conn, "INSERT INTO `$tbl` (name $extra_cols) VALUES ('$val_safe' $extra_vals)"); 
+                    $success_count++;
+                }
+            } else { 
+                // MODIFIED: Include extra columns
+                mysqli_query($conn, "INSERT INTO `$tbl` (name $extra_cols) VALUES ('$val_safe' $extra_vals)"); 
+                $success_count++;
+            }
+        } catch (Exception $e) { $duplicates_found[] = "$val (Error)"; }
     }
 
     if (!empty($duplicates_found)) {
         $dup_list = implode(", ", $duplicates_found);
-        $_SESSION['sys_msg'] = "$section_name takes unique values only, and the value(s) '$dup_list' already exists";
-        $_SESSION['sys_msg_color'] = "red";
+        if ($success_count > 0) {
+             $_SESSION['sys_msg'] = "Added $success_count items. " . ($lab_link_success ? " (Config Saved)" : "") . " Skipped: $dup_list";
+             $_SESSION['sys_msg_color'] = "orange";
+        } else {
+             $_SESSION['sys_msg'] = "Error: Values '$dup_list' already exist.";
+             $_SESSION['sys_msg_color'] = "red";
+        }
     } else {
-        $_SESSION['sys_msg'] = "Items Added Successfully"; $_SESSION['sys_msg_color'] = "green";
+        $msg = "Items added successfully";
+        if ($lab_link_success) $msg .= " and linked to $linked_lab";
+        if ($lab_table_created) $msg .= ". Table '$tbl_lab_name' created.";
+        
+        $_SESSION['sys_msg'] = $msg;
+        $_SESSION['sys_msg_color'] = "green";
     }
     header("Location: manage_config.php"); exit(); 
 }
 
+// 6. DELETE OPTION
 if (isset($_GET['del_opt_id'])) {
     $col = $_GET['target']; $tbl = $col; $id = $_GET['del_opt_id'];
-    mysqli_query($conn, "DELETE FROM `$tbl` WHERE id=$id");
+    try {
+        if(mysqli_query($conn, "DELETE FROM `$tbl` WHERE id=$id")) {
+            $_SESSION['sys_msg'] = "Option deleted successfully";
+            $_SESSION['sys_msg_color'] = "green";
+        } else {
+            $_SESSION['sys_msg'] = "Error: Could not delete option.";
+            $_SESSION['sys_msg_color'] = "red";
+        }
+    } catch (Exception $e) {
+        $_SESSION['sys_msg'] = "Error: " . $e->getMessage();
+        $_SESSION['sys_msg_color'] = "red";
+    }
     header("Location: manage_config.php"); exit();
 }
 
@@ -203,6 +353,8 @@ include 'header.php';
         $title = $sec['section_title']; $col = $sec['column_name']; 
         $sid = $sec['id']; $table = $col; $type = $sec['input_type'];
         $act_id="act_$sid"; $ren_id="ren_$sid"; $add_id="add_$sid"; $list_id="list_$sid"; 
+        
+        $is_static = in_array($col, $protected_cols);
     ?>
         <div class="column">
             <div class="header-row">
@@ -214,6 +366,7 @@ include 'header.php';
                 </div>
                 <button class="btn-edit-trigger" onclick="toggleFlex('<?php echo $act_id; ?>')">Edit Options</button>
             </div>
+            
             <div id="<?php echo $act_id; ?>" class="action-bar" style="display:none;">
                 <button class="btn-toggle" style="background-color:#ff9800;" onclick="toggle('<?php echo $ren_id; ?>')">Edit Label</button>
                 <div id="<?php echo $ren_id; ?>" class="rename-box">
@@ -225,9 +378,16 @@ include 'header.php';
                         </div>
                     </form>
                 </div>
+                
                 <div class="remove-wrapper">
-                    <a href="manage_config.php?remove_section=<?php echo $sid; ?>" class="btn-action-remove disabled" id="rem_<?php echo $sid; ?>" onclick="return confirm('Delete entire section?');">Remove Section</a>
-                    <button id="saf_<?php echo $sid; ?>" class="btn-safety-toggle" onclick="toggleSafety('rem_<?php echo $sid; ?>', this.id)">ENABLE</button>
+                    <?php if ($is_static): ?>
+                        <div style="flex: 3; background-color:#546e7a; color:white; padding:10px; text-align:center; border-radius:4px; font-size:13px; font-weight:bold; cursor:default;">
+                            STATIC (SYSTEM REQUIRED)
+                        </div>
+                    <?php else: ?>
+                        <a href="manage_config.php?remove_section=<?php echo $sid; ?>" class="btn-action-remove disabled" id="rem_<?php echo $sid; ?>" onclick="return confirm('Delete entire section?');">Remove Section</a>
+                        <button id="saf_<?php echo $sid; ?>" class="btn-safety-toggle" onclick="toggleSafety('rem_<?php echo $sid; ?>', this.id)">ENABLE</button>
+                    <?php endif; ?>
                 </div>
                 
                 <?php if ($type != 'email'): ?>
@@ -239,7 +399,25 @@ include 'header.php';
                 <div id="<?php echo $add_id; ?>" style="display:none; margin-top:10px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee;">
                     <form method="POST">
                         <input type="hidden" name="target_col" value="<?php echo $col; ?>">
-                        <input type="text" name="new_val" placeholder="Name or Range (e.g. PC1-5)" required>
+                        
+                        <?php if($col == 'system_number'): ?>
+                            <label style="display:block; margin-bottom:5px; font-weight:600; font-size:12px;">Select Lab (for Configuration):</label>
+                            <select name="linked_lab_name" style="margin-bottom:10px; border:1px solid #ccc; width:100%; padding:8px;">
+                                <option value="">-- No Lab Link --</option>
+                                <?php
+                                $l_chk = mysqli_query($conn, "SHOW TABLES LIKE 'lab_name'");
+                                if(mysqli_num_rows($l_chk) > 0) {
+                                    $l_res = mysqli_query($conn, "SELECT name FROM lab_name ORDER BY name ASC");
+                                    while($lr = mysqli_fetch_assoc($l_res)) {
+                                        echo "<option value='".htmlspecialchars($lr['name'])."'>".htmlspecialchars($lr['name'])."</option>";
+                                    }
+                                }
+                                ?>
+                            </select>
+                            <div style="font-size:11px; color:#666; margin-bottom:5px;">Ex: Select 'Aryabhatta' and type 'ARY1-134'</div>
+                        <?php endif; ?>
+                        
+                        <input type="text" name="new_val" placeholder="Name or Range (e.g. PC1-5 or ARY1-134)" required>
                         <div class="button-group">
                             <input type="submit" name="add_option" value="Add" class="btn-add">
                         </div>

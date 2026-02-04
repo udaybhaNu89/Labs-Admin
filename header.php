@@ -1,6 +1,70 @@
 <?php
 // Get current file name for active state
 $current_page = basename($_SERVER['PHP_SELF']);
+
+// Check for system messages from session (set by other pages)
+$sys_msg = "";
+$sys_msg_color = "";
+if (isset($_SESSION['sys_msg'])) {
+    $sys_msg = $_SESSION['sys_msg'];
+    $sys_msg_color = isset($_SESSION['sys_msg_color']) ? $_SESSION['sys_msg_color'] : 'green';
+    unset($_SESSION['sys_msg']); // Clear message after displaying once
+    unset($_SESSION['sys_msg_color']);
+}
+
+// =========================================================================
+// SECURITY & ACCESS CONTROL LAYER
+// =========================================================================
+
+// 1. Get Current User Permissions
+// We assume $conn is available because header.php is included after db connection
+if (isset($_SESSION['admin_user'])) {
+    $safe_user = mysqli_real_escape_string($conn, $_SESSION['admin_user']);
+    $perm_query = mysqli_query($conn, "SELECT permissions FROM admins WHERE username = '$safe_user' LIMIT 1");
+    
+    // Default to 'Partial' (Least Privilege Principle) if query fails or user not found
+    $user_permission = 'Partial'; 
+    
+    if ($perm_query && mysqli_num_rows($perm_query) > 0) {
+        $p_row = mysqli_fetch_assoc($perm_query);
+        // Ensure strictly 'Full' or 'Partial'
+        $user_permission = ($p_row['permissions'] === 'Full') ? 'Full' : 'Partial'; 
+    }
+} else {
+    // If no session user, redirect to login (Fallback security)
+    header("Location: login.php");
+    exit();
+}
+
+// 2. Define Restricted Pages (Pages only FULL Admins can access)
+$restricted_pages = [
+    'labs_hub.php', 
+    'labs_info_form.php', 
+    'labs_info_manager.php', 
+    'labs_info_logs.php', 
+    'labs_info.php',
+    'systems_info_manager.php',
+    'systems_info_form.php',
+    'manage_config.php',
+    'invoices_hub.php', 
+    'invoices_form.php', 
+    'invoices_management.php', 
+    'invoices_log.php',
+    'manage_admins.php'
+];
+
+// 3. Enforce Access Control (Broken Access Control Protection)
+// If the user has 'Partial' permission AND acts on a restricted page -> DENY ACCESS
+if ($user_permission === 'Partial' && in_array($current_page, $restricted_pages)) {
+    // Optional: Set an error message before redirect
+    $_SESSION['sys_msg'] = "Access Denied: You do not have permission to view that page.";
+    $_SESSION['sys_msg_color'] = "red";
+    
+    // Redirect to a safe page
+    header("Location: complaints_info.php");
+    exit();
+}
+// =========================================================================
 ?>
 <!DOCTYPE html>
 <html>
@@ -34,7 +98,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
            ========================================= */
         .navbar { 
             background-color: #34495e; 
-            width: 250px;              /* UPDATED: Fixed Width */
+            width: 250px;              
             height: 100vh;             
             position: fixed;           
             top: 0;
@@ -104,7 +168,6 @@ $current_page = basename($_SERVER['PHP_SELF']);
            TOP HEADING SECTION (FIXED WITH MARGIN)
            ========================================= */
         .main-header {
-            /* Must match Sidebar Width */
             margin-left: 250px;        
             background-color: #ffffff;
             padding: 15px 30px;
@@ -123,13 +186,8 @@ $current_page = basename($_SERVER['PHP_SELF']);
            ========================================= */
         .container { 
             padding: 20px; 
-            
-            /* UPDATED: Must be >= Sidebar Width */
             margin-left: 250px;        
-            
-            /* Ensures container fills remaining space properly */
             width: calc(100% - 250px); 
-            
             box-sizing: border-box;
         }
 
@@ -236,10 +294,17 @@ $current_page = basename($_SERVER['PHP_SELF']);
     <div class="navbar">
         <div class="nav-links">
             <h3 style="color: #ccc; font-size: 12px; padding: 0 25px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Menu</h3>
-            <a href="admin_dashboard.php" class="<?php echo ($current_page=='admin_dashboard.php')?'active':''; ?>">View Complaints</a>
-            <a href="manage_config.php" class="<?php echo ($current_page=='manage_config.php')?'active':''; ?>">Manage Complaint Options</a>
-            <a href="storage_hub.php" class="<?php echo (in_array($current_page, ['storage_hub.php', 'storage_form.php', 'storage_management.php', 'storage_logs.php']))?'active':''; ?>">Storage Hub</a>
-            <a href="manage_admins.php" class="<?php echo ($current_page=='manage_admins.php')?'active':''; ?>">Manage Admins</a>
+            
+            <a href="dashboard_overview.php" class="<?php echo ($current_page=='dashboard_overview.php')?'active':''; ?>">Dashboard</a>
+            <a href="complaints_info.php" class="<?php echo ($current_page=='complaints_info.php')?'active':''; ?>">Complaints</a>
+            
+            <?php if ($user_permission === 'Full'): ?>
+                <a href="labs_hub.php" class="<?php echo (in_array($current_page, ['labs_hub.php', 'labs_info_form.php', 'labs_info_manager.php', 'labs_info_logs.php', 'labs_info.php', 'systems_info_manager.php', 'systems_info_form.php']))?'active':''; ?>">Labs Hub</a>
+                
+                <a href="manage_config.php" class="<?php echo ($current_page=='manage_config.php')?'active':''; ?>">Manage Complaint Options</a>
+                <a href="invoices_hub.php" class="<?php echo (in_array($current_page, ['invoices_hub.php', 'invoices_form.php', 'invoices_management.php', 'invoices_log.php']))?'active':''; ?>">Invoices Hub</a>
+                <a href="manage_admins.php" class="<?php echo ($current_page=='manage_admins.php')?'active':''; ?>">Manage Admins</a>
+            <?php endif; ?>
         </div>
 
         <div class="logout-container">
