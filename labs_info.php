@@ -2,6 +2,49 @@
 require 'auth_session.php';
 
 // =============================================================
+// --- ADDED: HANDLE FIELD UPDATE ---
+// =============================================================
+if (isset($_POST['update_info_field'])) {
+    $id = intval($_POST['target_id']);
+    $col = mysqli_real_escape_string($conn, $_POST['target_col']);
+    $val = mysqli_real_escape_string($conn, $_POST['new_value']);
+    $tbl = mysqli_real_escape_string($conn, $_POST['target_table']);
+
+    // Security: Check permissions based on the table type
+    $allowed = false;
+    
+    if ($tbl == 'labs_unit') {
+        // Checking Lab Options
+        $check = mysqli_query($conn, "SELECT id FROM labs_edit_options WHERE edit_options = '$col'");
+        if (mysqli_num_rows($check) > 0) $allowed = true;
+    } else {
+        // Checking System Options (Dynamic Tables)
+        $check = mysqli_query($conn, "SELECT id FROM systems_edit_options WHERE edit_options = '$col'");
+        if (mysqli_num_rows($check) > 0) $allowed = true;
+    }
+
+    if ($allowed) {
+        $update_sql = "UPDATE `$tbl` SET `$col` = '$val' WHERE id = $id";
+        if(mysqli_query($conn, $update_sql)) {
+            $_SESSION['sys_msg'] = "Updated Successfully"; $_SESSION['sys_msg_color'] = "green";
+        } else {
+            $_SESSION['sys_msg'] = "Update Failed"; $_SESSION['sys_msg_color'] = "red";
+        }
+    } else {
+        $_SESSION['sys_msg'] = "Error: Field not editable"; $_SESSION['sys_msg_color'] = "red";
+    }
+    
+    // --- RESTORE CONTEXT (Prevent Page Reset) ---
+    if (isset($_POST['context_lab'])) {
+        $_POST['submit_info'] = 1; // Trick the script into thinking "Get Info" was clicked
+        $_POST['lab_name'] = $_POST['context_lab'];
+        $_POST['system_number'] = isset($_POST['context_sys']) ? $_POST['context_sys'] : '';
+    }
+    // --------------------------------------------
+}
+// =============================================================
+
+// =============================================================
 // 0. AJAX HANDLER: FETCH LOG DETAILS FOR POPUP
 // =============================================================
 if (isset($_POST['fetch_log_details'])) {
@@ -20,10 +63,8 @@ if (isset($_POST['fetch_log_details'])) {
     $dynamic_fields = [];
     
     while ($sec = mysqli_fetch_assoc($sec_res)) {
-        // Skip System/Lab/Email columns
         if ($sec['section_title'] == 'Lab Name') { $lab_col = $sec['column_name']; continue; }
         
-        // Handle System Number: Save column name, but decide if we display it later
         if ($sec['section_title'] == 'System Number') { 
             $sys_col = $sec['column_name']; 
             continue; 
@@ -31,18 +72,15 @@ if (isset($_POST['fetch_log_details'])) {
         
         if ($sec['input_type'] == 'email') { $email_col = $sec['column_name']; continue; }
         
-        // --- IDENTIFY ROOM NUMBER ---
         if (strcasecmp($sec['section_title'], 'Room Number') == 0 || strcasecmp($sec['section_title'], 'Room No') == 0) { 
             $room_col = $sec['column_name'];
             continue; 
         }
 
-        // Store other fields
         $dynamic_fields[] = $sec;
     }
 
     // 2. Build Query
-    // Logic: If req_sys is 'ALL', fetch all for lab. If specific, fetch specific.
     $sys_condition = "";
     if ($req_sys !== 'ALL') {
         $sys_condition = "AND main.`$sys_col` = '$req_sys'";
@@ -72,10 +110,7 @@ if (isset($_POST['fetch_log_details'])) {
         echo '<table class="log-table">';
         echo '<thead><tr>';
         
-        // CONDITIONAL COLUMN: If viewing ALL lab complaints, show System Number
         if ($req_sys === 'ALL') { echo '<th>System No</th>'; }
-
-        // if ($room_col) { echo '<th>Room No</th>'; }
         
         echo '<th>Issues</th> 
               <th>Email</th>
@@ -87,7 +122,6 @@ if (isset($_POST['fetch_log_details'])) {
         
         while ($row = mysqli_fetch_assoc($res)) {
             
-            // Issues
             $issue_parts = [];
             foreach ($dynamic_fields as $field) {
                 $col_key = $field['column_name'];
@@ -101,12 +135,9 @@ if (isset($_POST['fetch_log_details'])) {
             $issues_display = implode("<br>", $issue_parts);
             if (empty($issues_display)) { $issues_display = "-"; }
 
-            // Columns
             $sys_val = isset($row[$sys_col]) ? htmlspecialchars($row[$sys_col]) : '-';
-            // $room_val = ($room_col && isset($row[$room_col])) ? htmlspecialchars($row[$room_col]) : '-';
             $email = ($email_col && isset($row[$email_col])) ? htmlspecialchars($row[$email_col]) : '-';
             
-            // Dates
             $reported_raw = isset($row['orig_reported_date']) ? $row['orig_reported_date'] : $row['created_at'];
             $reported_date = date("d-M-Y h:i A", strtotime($reported_raw));
             
@@ -119,7 +150,6 @@ if (isset($_POST['fetch_log_details'])) {
                 $updated_date = date("d-M-Y h:i A", strtotime($row['partially_completed_at']));
             }
             
-            // Status Badge
             $status_display = htmlspecialchars($status_raw);
             if ($status_raw == 'Pending') {
                 $status_display = "<span class='status-pending'>Pending</span>";
@@ -130,10 +160,8 @@ if (isset($_POST['fetch_log_details'])) {
             }
 
             echo "<tr>";
-            // Show System No data if requesting ALL
             if ($req_sys === 'ALL') { echo "<td style='vertical-align:middle; text-align:center; font-weight:bold;'>$sys_val</td>"; }
             
-            // if ($room_col) { echo "<td style='vertical-align:middle; text-align:center;'>$room_val</td>"; }
             echo "<td style='vertical-align:middle; text-align:center; white-space: normal;'>$issues_display</td>";
             echo "<td style='vertical-align:middle; text-align:center;'>$email</td>";
             echo "<td style='vertical-align:middle; text-align:center;'>$status_display</td>";
@@ -145,7 +173,7 @@ if (isset($_POST['fetch_log_details'])) {
     } else {
         echo '<p style="text-align:center; padding:20px; color:#666;">No records found.</p>';
     }
-    exit(); // Stop script here for AJAX calls
+    exit(); 
 }
 
 // =============================================================
@@ -158,6 +186,7 @@ $is_system_search = false;
 $search_msg = "";
 $ordered_sections = []; 
 $lab_personnel_data = []; 
+$lab_col_map = []; 
 
 // Variables for stats
 $system_total_complaints = 0;
@@ -165,6 +194,10 @@ $system_active_complaints = 0;
 
 $lab_total_complaints = 0;
 $lab_active_complaints = 0;
+
+// Variables for editing
+$target_table_for_edit = "";
+$lab_unit_id = 0; 
 
 // =============================================================
 // 1. FETCH LAB SYSTEMS MAPPING
@@ -196,6 +229,16 @@ if ($master_res) {
 $json_lab_systems = json_encode($lab_systems_data);
 // =============================================================
 
+// --- Fetch Edit Permissions ---
+$editable_lab_cols = [];
+$e_lab_res = mysqli_query($conn, "SELECT edit_options FROM labs_edit_options");
+while ($r = mysqli_fetch_assoc($e_lab_res)) { $editable_lab_cols[] = $r['edit_options']; }
+
+$editable_sys_cols = [];
+$e_sys_res = mysqli_query($conn, "SELECT edit_options FROM systems_edit_options");
+while ($r = mysqli_fetch_assoc($e_sys_res)) { $editable_sys_cols[] = $r['edit_options']; }
+// -------------------------------------
+
 $pre_selected_system = "";
 
 // Handle Form Submission
@@ -214,6 +257,7 @@ if (isset($_POST['submit_info'])) {
         $unit_res = mysqli_query($conn, $unit_sql);
         if ($unit_res && mysqli_num_rows($unit_res) > 0) {
             $unit_row = mysqli_fetch_assoc($unit_res);
+            $lab_unit_id = $unit_row['id'];
             
             $meta_q = "SELECT column_name, section_title FROM labs_sections WHERE section_title LIKE '%Incharge%' OR section_title LIKE '%Programmer%'";
             $meta_res = mysqli_query($conn, $meta_q);
@@ -222,6 +266,7 @@ if (isset($_POST['submit_info'])) {
                 $col_name = $sec['column_name'];
                 if (isset($unit_row[$col_name])) {
                     $lab_personnel_data[$sec['section_title']] = $unit_row[$col_name];
+                    $lab_col_map[$sec['section_title']] = $col_name;
                 }
             }
         }
@@ -233,6 +278,7 @@ if (isset($_POST['submit_info'])) {
         if ($tbl_res && mysqli_num_rows($tbl_res) > 0) {
             $tbl_row = mysqli_fetch_assoc($tbl_res);
             $target_table = $tbl_row['table_lab_name'];
+            $target_table_for_edit = $target_table; 
             
             if (!empty($target_table)) {
                 $sql = "SELECT * FROM `$target_table` WHERE system_number = '$selected_system' LIMIT 1";
@@ -250,7 +296,7 @@ if (isset($_POST['submit_info'])) {
                         $lab_details['SYSTEM_CONTEXT_NO'] = $selected_system;
                         $show_results = true;
 
-                        // --- 3. CALCULATE SYSTEM COMPLAINT STATS ---
+                        // Stats Calculation
                         $lab_col = 'lab_name'; 
                         $sys_col = 'system_number';
                         
@@ -306,7 +352,6 @@ if (isset($_POST['submit_info'])) {
         
         if($result && mysqli_num_rows($result) > 0) {
             $lab_details = mysqli_fetch_assoc($result);
-            // Save Lab name for JS usage
             $lab_details['LAB_CONTEXT_NAME'] = $selected_lab; 
             $show_results = true;
 
@@ -359,51 +404,16 @@ include 'header.php';
     .status-completed { color: #27ae60; font-weight: bold; background: #e8f5e9; padding: 4px 8px; border-radius: 4px; font-size: 12px; display: inline-block; }
     .status-partial { color: #f39c12; font-weight: bold; background: #fef9e7; padding: 4px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #f39c12; display: inline-block; white-space: normal; }
 
-    .modal-overlay {
-        display: none; 
-        position: fixed; 
-        z-index: 1000; 
-        left: 0; 
-        top: 0; 
-        width: 100%; 
-        height: 100%; 
-        overflow: auto; 
-        background-color: rgba(0,0,0,0.5); 
-    }
-    .modal-content {
-        background-color: #fefefe;
-        margin: 5% auto; 
-        padding: 20px;
-        border: 1px solid #888;
-        width: 90%; 
-        max-width: 1000px;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        position: relative;
-    }
-    .close-btn {
-        color: #aaa;
-        float: right;
-        font-size: 28px;
-        font-weight: bold;
-        cursor: pointer;
-    }
-    .close-btn:hover, .close-btn:focus { color: black; text-decoration: none; cursor: pointer; }
-    
-    .stat-link {
-        color: inherit;
-        text-decoration: none;
-        border-bottom: 1px dashed #999;
-        cursor: pointer;
-        transition: color 0.2s;
-    }
+    .modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+    .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: 1px solid #888; width: 90%; max-width: 1000px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); position: relative; }
+    .close-btn { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+    .close-btn:hover { color: black; }
+    .stat-link { color: inherit; text-decoration: none; border-bottom: 1px dashed #999; cursor: pointer; transition: color 0.2s; }
     .stat-link:hover { color: var(--primary); border-bottom-style: solid; }
-
     .log-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
     .log-table th, .log-table td { border: 1px solid #ddd; padding: 12px; text-align: center; vertical-align: middle; }
     .log-table th { background-color: #f8f9fa; font-weight: bold; color: #495057; border-bottom: 2px solid #dee2e6; }
     .log-table tr:nth-child(even) { background-color: #f9f9f9; }
-    .log-table tr:hover { background-color: #f1f1f1; }
 </style>
 
 
@@ -418,7 +428,6 @@ include 'header.php';
     <?php endif; ?>
     
     <form method="POST">
-        
         <div class="form-group">
             <label style="display:block; font-weight:bold; margin-bottom:5px;">Lab Name <span style="color:red">*</span></label>
             <select name="lab_name" required style="width:100%; padding:10px; border:1px solid #ddd; border-radius:4px;">
@@ -448,14 +457,16 @@ include 'header.php';
             <label style="display:block; font-weight:bold; margin-bottom:5px;">System Number</label>
             <select name="system_number" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:4px;">
                 <option value="" selected>-- Select System --</option>
-                </select>
+            </select>
         </div>
 
         <div style="text-align:center; margin-top:25px;">
             <input type="submit" name="submit_info" value="Get Info" class="btn-add" style="width:100%; padding:12px; cursor:pointer;">
         </div>
-
     </form>
+        <p style="text-align:center; margin-top:15px;">
+            <a href="labs_hub.php" class="btn-outline">&larr; Back to Hub</a>
+        </p>
 </div>
 
 <?php if ($show_results && $lab_details): ?>
@@ -473,40 +484,45 @@ include 'header.php';
         <table style="width:100%; border-collapse: collapse;">
             <?php 
             if (!$is_system_search && !empty($ordered_sections)) {
-                // GENERAL LAB INFO logic...
+                // --- A. GENERAL LAB INFO ---
                 foreach($ordered_sections as $sec) {
                     $col_key = $sec['column_name'];
                     $label = $sec['section_title'];
                     $col_val = isset($lab_details[$col_key]) ? $lab_details[$col_key] : '';
                     $display_val = ($col_val === null || $col_val === '') ? '<span style="color:#999;">-</span>' : htmlspecialchars($col_val);
+                    
+                    // Edit Button Check (LABS UNIT)
+                    $edit_btn = "";
+                    $js_val = addslashes($col_val);
+                    
+                    // Prep Context for JS
+                    $js_lab_context = htmlspecialchars($selected_lab);
+                    $js_sys_context = htmlspecialchars($selected_system);
+
+                    if (in_array($col_key, $editable_lab_cols)) {
+                        $row_id = $lab_details['id'];
+                        $edit_btn = " <a href='javascript:void(0)' onclick='openEditModal(" . $row_id . ", \"$col_key\", \"$js_val\", \"labs_unit\", \"$js_lab_context\", \"$js_sys_context\")' title='Edit' style='text-decoration:none; color:var(--primary); font-size:14px; margin-left:5px; cursor:pointer;'>&#9998;</a>";
+                    }
+                    
                     echo "<tr style='border-bottom:1px solid #eee;'>";
                     echo "<td style='padding:12px 5px; font-weight:bold; color:#555; width:40%;'>$label</td>";
-                    echo "<td style='padding:12px 5px; color:#333;'>$display_val</td>";
+                    echo "<td style='padding:12px 5px; color:#333;'>$display_val $edit_btn</td>";
                     echo "</tr>";
                 }
                 
-                // UPDATED: Added links to view ALL complaints for the selected Lab
                 $js_lab = htmlspecialchars($lab_details['LAB_CONTEXT_NAME']);
-                
                 echo "<tr style='border-bottom:1px solid #eee; background-color:#fcfcfc;'>";
                 echo "<td style='padding:12px 5px; font-weight:bold; color:#2c3e50;'>Total Complaints</td>";
-                echo "<td style='padding:12px 5px; font-weight:bold; color:#2c3e50;'>";
-                echo "<a class='stat-link' onclick='openLogModal(\"$js_lab\", \"ALL\", \"total\")'>$lab_total_complaints</a>";
-                echo "</td>";
+                echo "<td style='padding:12px 5px; font-weight:bold; color:#2c3e50;'><a class='stat-link' onclick='openLogModal(\"$js_lab\", \"ALL\", \"total\")'>$lab_total_complaints</a></td>";
                 echo "</tr>";
-                
                 echo "<tr style='border-bottom:1px solid #eee; background-color:#fff3e0;'>";
                 echo "<td style='padding:12px 5px; font-weight:bold; color:#e67e22;'>Active Complaints</td>";
-                echo "<td style='padding:12px 5px; font-weight:bold; color:#d35400;'>";
-                echo "<a class='stat-link' onclick='openLogModal(\"$js_lab\", \"ALL\", \"active\")'>$lab_active_complaints</a>";
-                echo "</td>";
+                echo "<td style='padding:12px 5px; font-weight:bold; color:#d35400;'><a class='stat-link' onclick='openLogModal(\"$js_lab\", \"ALL\", \"active\")'>$lab_active_complaints</a></td>";
                 echo "</tr>";
 
             } else {
                 // --- B. SPECIFIC SYSTEM SPECS ---
                 
-
-                // 2. SHOW HARDWARE SPECS (INCLUDES PERSONNEL)
                 $sys_labels = [];
                 $label_q = mysqli_query($conn, "SELECT column_name, section_title FROM systems_sections");
                 while($l_row = mysqli_fetch_assoc($label_q)) {
@@ -516,39 +532,51 @@ include 'header.php';
                 foreach($lab_details as $col_key => $col_val) {
                     if(in_array($col_key, ['id', 'LAB_CONTEXT_NAME', 'SYSTEM_CONTEXT_NO'])) continue;
                     
-                    // If key exists in system labels, use that. Otherwise prettify the key.
                     $label = isset($sys_labels[$col_key]) ? $sys_labels[$col_key] : ucwords(str_replace('_', ' ', $col_key));
-                    
                     $display_val = ($col_val === null || $col_val === '') ? '<span style="color:#999;">-</span>' : htmlspecialchars($col_val);
+                    
+                    // --- CHECK EDIT PERMISSIONS ---
+                    $js_val = addslashes($col_val);
+                    $edit_btn = "";
+                    
+                    // Prep Context for JS
+                    $js_lab_context = htmlspecialchars($selected_lab);
+                    $js_sys_context = htmlspecialchars($selected_system);
+                    
+                    // 1. Check System Columns (Dynamic Table)
+                    if (in_array($col_key, $editable_sys_cols)) {
+                        $edit_btn = " <a href='javascript:void(0)' onclick='openEditModal(" . $lab_details['id'] . ", \"$col_key\", \"$js_val\", \"$target_table_for_edit\", \"$js_lab_context\", \"$js_sys_context\")' title='Edit' style='text-decoration:none; color:var(--primary); font-size:14px; margin-left:5px; cursor:pointer;'>&#9998;</a>";
+                    }
+                    // 2. Check Lab Personnel Columns (Labs Unit Table)
+                    elseif (isset($lab_col_map[$col_key])) {
+                        $actual_col = $lab_col_map[$col_key];
+                        if (in_array($actual_col, $editable_lab_cols)) {
+                            // Use $lab_unit_id specifically for labs_unit updates
+                            $edit_btn = " <a href='javascript:void(0)' onclick='openEditModal(" . $lab_unit_id . ", \"$actual_col\", \"$js_val\", \"labs_unit\", \"$js_lab_context\", \"$js_sys_context\")' title='Edit' style='text-decoration:none; color:var(--primary); font-size:14px; margin-left:5px; cursor:pointer;'>&#9998;</a>";
+                        }
+                    }
+                    // -----------------------------
                     
                     echo "<tr style='border-bottom:1px solid #eee;'>";
                     echo "<td style='padding:12px 5px; font-weight:bold; color:#555; width:40%;'>$label</td>";
-                    echo "<td style='padding:12px 5px; color:#333;'>$display_val</td>";
+                    echo "<td style='padding:12px 5px; color:#333;'>$display_val $edit_btn</td>";
                     echo "</tr>";
                 }
 
-                
-                // 1. SHOW SYSTEM STATS WITH POPUP LINKS
                 $js_lab = htmlspecialchars($lab_details['LAB_CONTEXT_NAME']);
                 $js_sys = htmlspecialchars($lab_details['SYSTEM_CONTEXT_NO']);
                 
                 echo "<tr style='border-bottom:1px solid #eee; background-color:#fcfcfc;'>";
                 echo "<td style='padding:12px 5px; font-weight:bold; color:#2c3e50;'>Total Complaints Registered</td>";
-                echo "<td style='padding:12px 5px; font-weight:bold; color:#2c3e50;'>";
-                echo "<a class='stat-link' onclick='openLogModal(\"$js_lab\", \"$js_sys\", \"total\")'>$system_total_complaints</a>";
-                echo "</td>";
+                echo "<td style='padding:12px 5px; font-weight:bold; color:#2c3e50;'><a class='stat-link' onclick='openLogModal(\"$js_lab\", \"$js_sys\", \"total\")'>$system_total_complaints</a></td>";
                 echo "</tr>";
-
                 echo "<tr style='border-bottom:1px solid #eee; background-color:#fff3e0;'>";
                 echo "<td style='padding:12px 5px; font-weight:bold; color:#e67e22;'>Active Complaints</td>";
-                echo "<td style='padding:12px 5px; font-weight:bold; color:#d35400;'>";
-                echo "<a class='stat-link' onclick='openLogModal(\"$js_lab\", \"$js_sys\", \"active\")'>$system_active_complaints</a>";
-                echo "</td>";
+                echo "<td style='padding:12px 5px; font-weight:bold; color:#d35400;'><a class='stat-link' onclick='openLogModal(\"$js_lab\", \"$js_sys\", \"active\")'>$system_active_complaints</a></td>";
                 echo "</tr>";
             }
             ?>
         </table>
-
     </div>
 <?php endif; ?>
 
@@ -562,6 +590,37 @@ include 'header.php';
     </div>
 </div>
 
+<style>
+    .edit-modal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+    .edit-modal-content { background-color: #fff; margin: 15% auto; padding: 25px; border-radius: 8px; width: 350px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); position: relative; animation: fadeIn 0.3s; }
+    .edit-close { float: right; font-size: 20px; font-weight: bold; cursor: pointer; color: #aaa; }
+    .edit-close:hover { color: #000; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+
+<div id="editInfoModal" class="edit-modal">
+    <div class="edit-modal-content">
+        <span class="edit-close" onclick="closeEditModal()">&times;</span>
+        <h3 style="margin-top:0; color:var(--primary);">Edit Value</h3>
+        
+        <form method="POST">
+            <input type="hidden" name="target_id" id="edit_modal_id">
+            <input type="hidden" name="target_col" id="edit_modal_col">
+            <input type="hidden" name="target_table" id="edit_modal_table">
+            
+            <input type="hidden" name="context_lab" id="edit_context_lab">
+            <input type="hidden" name="context_sys" id="edit_context_sys">
+            
+            <label style="display:block; text-align:left; margin-bottom:5px;">Update Data:</label>
+            <input type="text" name="new_value" id="edit_modal_val" required style="width:100%; padding:10px; border:1px solid #ccc; border-radius:4px;">
+            
+            <div style="margin-top:15px; text-align:right;">
+                <button type="button" class="btn-cancel" onclick="closeEditModal()">Cancel</button>
+                <input type="submit" name="update_info_field" value="Update" class="btn-add">
+            </div>
+        </form>
+    </div>
+</div>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     
@@ -605,7 +664,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// --- POPUP MODAL LOGIC ---
+// --- POPUP MODAL LOGIC (COMPLAINTS) ---
 function openLogModal(lab, sys, type) {
     const modal = document.getElementById('logModal');
     const body = document.getElementById('modalBody');
@@ -644,11 +703,34 @@ function closeLogModal() {
     document.getElementById('logModal').style.display = "none";
 }
 
+// --- ADDED: EDIT MODAL LOGIC ---
+function openEditModal(id, col, val, tbl, lab, sys) {
+    document.getElementById('edit_modal_id').value = id;
+    document.getElementById('edit_modal_col').value = col;
+    document.getElementById('edit_modal_table').value = tbl;
+    document.getElementById('edit_modal_val').value = (val === '-') ? '' : val; 
+    
+    // Set Context
+    document.getElementById('edit_context_lab').value = lab;
+    document.getElementById('edit_context_sys').value = sys;
+    
+    document.getElementById('editInfoModal').style.display = 'block';
+}
+
+function closeEditModal() {
+    document.getElementById('editInfoModal').style.display = 'none';
+}
+// ------------------------------
+
 // Close if clicked outside
 window.onclick = function(event) {
     const modal = document.getElementById('logModal');
+    const editModal = document.getElementById('editInfoModal');
     if (event.target == modal) {
         modal.style.display = "none";
+    }
+    if (event.target == editModal) {
+        editModal.style.display = "none";
     }
 }
 </script>

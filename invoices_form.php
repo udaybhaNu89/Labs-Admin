@@ -146,10 +146,12 @@ include 'header.php';
         </div>
     </form>
     
-    <p style="text-align:center; margin-top:15px;">
-        <a href="invoices_hub.php" class="btn-outline">&larr; Back to Hub</a>
-    </p>
-</div>
+    <?php if (isset($user_permission) && $user_permission === 'Full'): ?>
+        <p style="text-align:center; margin-top:15px;">
+            <a href="invoices_hub.php" class="btn-outline">&larr; Back to Hub</a>
+        </p>
+    <?php endif; ?>
+    </div>
 
 </div>
 </body>

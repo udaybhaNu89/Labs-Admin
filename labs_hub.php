@@ -9,8 +9,8 @@ include 'header.php';
     <a href="labs_info.php" class="btn-block">View Labs Data</a>
     <a href="labs_info_form.php" class="btn-block secondary">Labs Info Form</a>
     <a href="labs_info_manager.php" class="btn-block">Labs Form Management</a>
-    <a href="systems_info_form.php" class="btn-block secondary">Systems Info Form</a>
-    <a href="systems_info_manager.php" class="btn-block">Systems Form Manager</a>
+    <a href="systems_info_form.php" class="btn-block secondary">Labs wise Systems Info Form</a>
+    <a href="systems_info_manager.php" class="btn-block">Labs Wise Systems Form Manager</a>
 </div>
 
 </div>

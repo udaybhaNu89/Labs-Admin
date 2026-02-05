@@ -47,7 +47,6 @@ $restricted_pages = [
     'systems_info_form.php',
     'manage_config.php',
     'invoices_hub.php', 
-    'invoices_form.php', 
     'invoices_management.php', 
     'invoices_log.php',
     'manage_admins.php'
@@ -209,7 +208,7 @@ if ($user_permission === 'Partial' && in_array($current_page, $restricted_pages)
         h1 { color: var(--primary); font-weight: 300; margin-bottom: 20px; }
         hr { border: 0; height: 1px; background: #ddd; margin-bottom: 30px; }
         .column, .priority-box, .create-section-box, .admin-card, .form-card { background: white; padding: 25px; margin-bottom: 20px; border-radius: var(--border-radius); box-shadow: var(--card-shadow); border: 1px solid #eaeaea; width: 100%; box-sizing: border-box; }
-        .admin-card { max-width: 350px; margin: 50px auto; padding: 40px; text-align: center; }
+        .admin-card { max-width: 450px; margin: 50px auto; padding: 40px; text-align: center; }
 
         input[type="text"], input[type="password"], input[type="number"], select, textarea { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; background-color: #fafafa; font-size: 14px; transition: border-color 0.3s; }
         input:focus, select:focus, textarea:focus { border-color: var(--primary); background-color: #fff; outline: none; }
@@ -298,10 +297,13 @@ if ($user_permission === 'Partial' && in_array($current_page, $restricted_pages)
             <a href="dashboard_overview.php" class="<?php echo ($current_page=='dashboard_overview.php')?'active':''; ?>">Dashboard</a>
             <a href="complaints_info.php" class="<?php echo ($current_page=='complaints_info.php')?'active':''; ?>">Complaints</a>
             
+            <?php if ($user_permission === 'Partial'): ?>
+                <a href="invoices_form.php" class="<?php echo ($current_page=='invoices_form.php')?'active':''; ?>">Add Invoices</a>
+            <?php endif; ?>
+            
             <?php if ($user_permission === 'Full'): ?>
-                <a href="labs_hub.php" class="<?php echo (in_array($current_page, ['labs_hub.php', 'labs_info_form.php', 'labs_info_manager.php', 'labs_info_logs.php', 'labs_info.php', 'systems_info_manager.php', 'systems_info_form.php']))?'active':''; ?>">Labs Hub</a>
-                
                 <a href="manage_config.php" class="<?php echo ($current_page=='manage_config.php')?'active':''; ?>">Manage Complaint Options</a>
+                <a href="labs_hub.php" class="<?php echo (in_array($current_page, ['labs_hub.php', 'labs_info_form.php', 'labs_info_manager.php', 'labs_info_logs.php', 'labs_info.php', 'systems_info_manager.php', 'systems_info_form.php']))?'active':''; ?>">Labs Hub</a>
                 <a href="invoices_hub.php" class="<?php echo (in_array($current_page, ['invoices_hub.php', 'invoices_form.php', 'invoices_management.php', 'invoices_log.php']))?'active':''; ?>">Invoices Hub</a>
                 <a href="manage_admins.php" class="<?php echo ($current_page=='manage_admins.php')?'active':''; ?>">Manage Admins</a>
             <?php endif; ?>

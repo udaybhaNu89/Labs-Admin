@@ -69,7 +69,7 @@ if (isset($_GET['move_section']) && isset($_GET['dir'])) {
         $_SESSION['sys_msg'] = "Order updated successfully"; 
         $_SESSION['sys_msg_color'] = "green";
     }
-    header("Location: systems_info_manager.php"); exit();
+    // header("Location: systems_info_manager.php"); exit();
 }
 
 // 2. Create New Section (Add Column to ALL Lab Tables)
@@ -90,30 +90,36 @@ if (isset($_POST['create_new_section'])) {
         if(mysqli_num_rows($col_check) > 0) {
              $_SESSION['sys_msg'] = "Error: Database column '$clean_name' is already in use."; 
              $_SESSION['sys_msg_color'] = "red";
-             header("Location: systems_info_manager.php"); exit();
-        }
-        
-        $max = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MAX(display_order) as m FROM $meta_table")); 
-        $next = $max['m'] + 1;
-        mysqli_query($conn, "INSERT INTO $meta_table (section_title, column_name, input_type, display_order) VALUES ('$title_safe', '$col', 'text', $next)");
-        
-        $target_tables = getLabTables($conn, $lab_list_table);
-        $success_count = 0;
-        
-        foreach ($target_tables as $tbl) {
-            $exists = mysqli_query($conn, "SHOW COLUMNS FROM `$tbl` LIKE '$col'");
-            if (mysqli_num_rows($exists) == 0) {
-                // CHANGED: Using TEXT instead of VARCHAR(255)
-                if(mysqli_query($conn, "ALTER TABLE `$tbl` ADD COLUMN `$col` TEXT DEFAULT NULL")) {
-                    $success_count++;
+             // header("Location: systems_info_manager.php"); exit();
+        } else {
+            $max = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MAX(display_order) as m FROM $meta_table")); 
+            $next = $max['m'] + 1;
+            mysqli_query($conn, "INSERT INTO $meta_table (section_title, column_name, input_type, display_order) VALUES ('$title_safe', '$col', 'text', $next)");
+            
+            $target_tables = getLabTables($conn, $lab_list_table);
+            $success_count = 0;
+            
+            foreach ($target_tables as $tbl) {
+                $exists = mysqli_query($conn, "SHOW COLUMNS FROM `$tbl` LIKE '$col'");
+                if (mysqli_num_rows($exists) == 0) {
+                    // CHANGED: Using TEXT instead of VARCHAR(255)
+                    if(mysqli_query($conn, "ALTER TABLE `$tbl` ADD COLUMN `$col` TEXT DEFAULT NULL")) {
+                        $success_count++;
+                    }
                 }
             }
+            
+            // --- ADDED: Handle Edit Option Checkbox ---
+            if (isset($_POST['need_edit_option'])) {
+                mysqli_query($conn, "INSERT INTO systems_edit_options (edit_options) VALUES ('$col')");
+            }
+            // ------------------------------------------
+            
+            $_SESSION['sys_msg'] = "Field created. Added to $success_count lab tables."; 
+            $_SESSION['sys_msg_color'] = "green";
         }
-        
-        $_SESSION['sys_msg'] = "Field created. Added to $success_count lab tables."; 
-        $_SESSION['sys_msg_color'] = "green";
     }
-    header("Location: systems_info_manager.php"); exit();
+    // header("Location: systems_info_manager.php"); exit();
 }
 
 // 3. Rename Section
@@ -152,7 +158,7 @@ if (isset($_POST['rename_section'])) {
         $_SESSION['sys_msg'] = "Renamed Successfully" . ($updated_tables > 0 ? " in $updated_tables tables." : "."); 
         $_SESSION['sys_msg_color'] = "green";
     }
-    header("Location: systems_info_manager.php"); exit();
+    // header("Location: systems_info_manager.php"); exit();
 }
 
 // 4. Remove Section
@@ -181,7 +187,7 @@ if (isset($_GET['remove_section'])) {
         $_SESSION['sys_msg'] = "Field not found."; 
         $_SESSION['sys_msg_color'] = "red";
     }
-    header("Location: systems_info_manager.php"); exit();
+    // header("Location: systems_info_manager.php"); exit();
 }
 
 include 'header.php';
@@ -191,6 +197,17 @@ include 'header.php';
 <p><a href="labs_hub.php" class="btn-outline">&larr; Back to Hub</a></p>
 <hr>
 
+<?php if(isset($_SESSION['sys_msg']) && $_SESSION['sys_msg'] != ""): ?>
+    <div style="text-align:center; margin-bottom:20px; padding:12px; border-radius:6px; 
+                background-color: <?php echo ($_SESSION['sys_msg_color']=='green')?'#e8f5e9':'#fce4ec'; ?>; 
+                color: <?php echo ($_SESSION['sys_msg_color']=='green')?'#2e7d32':'#c62828'; ?>; border:1px solid transparent;">
+        <strong><?php echo $_SESSION['sys_msg']; ?></strong>
+    </div>
+    <?php 
+    unset($_SESSION['sys_msg']);
+    unset($_SESSION['sys_msg_color']);
+    ?>
+<?php endif; ?>
 <div class="create-section-box">
     <h3 style="margin-top:0;">Add New System Specification</h3>
     <button class="btn-toggle" onclick="toggle('new_sec_form_sys')">+ Create New Field</button>
@@ -203,6 +220,12 @@ include 'header.php';
                 <em>All new system fields are created as TEXT fields to support letters, numbers, and long descriptions.</em>
             </div>
             
+            <div style="margin: 10px 0; text-align: left;">
+                <label style="display: inline-flex; align-items: center; cursor: pointer; color: #333;">
+                    <input type="checkbox" name="need_edit_option" value="1" style="width:auto; margin-right:8px;"> 
+                    Need Edit Option
+                </label>
+            </div>
             <div class="button-group">
                 <input type="submit" name="create_new_section" value="Create Field" class="btn-add">
                 <button type="button" class="btn-cancel" onclick="toggle('new_sec_form_sys')">Cancel</button>

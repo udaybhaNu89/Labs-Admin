@@ -24,7 +24,7 @@ if (isset($_GET['move_section']) && isset($_GET['dir'])) {
         mysqli_query($conn, "UPDATE $meta_table SET display_order = $t_order WHERE id = $id");
         mysqli_query($conn, "UPDATE $meta_table SET display_order = $curr_order WHERE id = $t_id");
     }
-    header("Location: labs_info_manager.php"); exit();
+    // header("Location: labs_info_manager.php"); exit();
 }
 
 // 2. Create New Section (Add Column)
@@ -50,29 +50,35 @@ if (isset($_POST['create_new_section'])) {
         $col_check = mysqli_query($conn, "SHOW COLUMNS FROM `$data_table` LIKE '$col'");
         if(mysqli_num_rows($col_check) > 0) {
              $_SESSION['sys_msg'] = "Error: Internal name '$clean_name' is already used."; $_SESSION['sys_msg_color'] = "red";
-             header("Location: labs_info_manager.php"); exit();
+             // header("Location: labs_info_manager.php"); exit();
+        } else {
+            // Insert into Meta Table
+            $max = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MAX(display_order) as m FROM $meta_table")); 
+            $next = $max['m'] + 1;
+            mysqli_query($conn, "INSERT INTO $meta_table (section_title, column_name, input_type, display_order) VALUES ('$title_safe', '$col', '$type', $next)");
+            
+            // Alter Data Table with optional UNIQUE constraint
+            // Note: For UNIQUE numeric columns, we use NULL default to avoid 'Duplicate entry 0' errors on existing rows
+            if ($type == 'numeric') {
+                $def = $allow_duplicates ? "DEFAULT 0" : "DEFAULT NULL";
+                mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` INT $def $constraint"); 
+            } elseif ($type == 'date') { 
+                mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` DATE DEFAULT NULL $constraint"); 
+            } else { 
+                mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` VARCHAR(255) DEFAULT NULL $constraint"); 
+            }
+            
+            // --- ADDED: Handle Edit Option Checkbox ---
+            if (isset($_POST['need_edit_option'])) {
+                mysqli_query($conn, "INSERT INTO labs_edit_options (edit_options) VALUES ('$col')");
+            }
+            // ------------------------------------------
+            
+            $msg_suffix = $allow_duplicates ? "" : " (Unique)";
+            $_SESSION['sys_msg'] = "Lab Field Created Successfully$msg_suffix"; $_SESSION['sys_msg_color'] = "green";
         }
-        
-        // Insert into Meta Table
-        $max = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MAX(display_order) as m FROM $meta_table")); 
-        $next = $max['m'] + 1;
-        mysqli_query($conn, "INSERT INTO $meta_table (section_title, column_name, input_type, display_order) VALUES ('$title_safe', '$col', '$type', $next)");
-        
-        // Alter Data Table with optional UNIQUE constraint
-        // Note: For UNIQUE numeric columns, we use NULL default to avoid 'Duplicate entry 0' errors on existing rows
-        if ($type == 'numeric') {
-            $def = $allow_duplicates ? "DEFAULT 0" : "DEFAULT NULL";
-            mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` INT $def $constraint"); 
-        } elseif ($type == 'date') { 
-            mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` DATE DEFAULT NULL $constraint"); 
-        } else { 
-            mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` VARCHAR(255) DEFAULT NULL $constraint"); 
-        }
-        
-        $msg_suffix = $allow_duplicates ? "" : " (Unique)";
-        $_SESSION['sys_msg'] = "Lab Field Created Successfully$msg_suffix"; $_SESSION['sys_msg_color'] = "green";
     }
-    header("Location: labs_info_manager.php"); exit();
+    // header("Location: labs_info_manager.php"); exit();
 }
 
 // 3. Rename Section
@@ -105,7 +111,7 @@ if (isset($_POST['rename_section'])) {
         mysqli_query($conn, "UPDATE $meta_table SET section_title = '$new_name_safe', column_name = '$new_col' WHERE id = $id");
         $_SESSION['sys_msg'] = "Renamed Successfully"; $_SESSION['sys_msg_color'] = "green";
     }
-    header("Location: labs_info_manager.php"); exit();
+    // header("Location: labs_info_manager.php"); exit();
 }
 
 // 4. Remove Section
@@ -120,7 +126,7 @@ if (isset($_GET['remove_section'])) {
         mysqli_query($conn, "DELETE FROM $meta_table WHERE id = $id"); 
     }
     $_SESSION['sys_msg'] = "Field Removed"; $_SESSION['sys_msg_color'] = "red";
-    header("Location: labs_info_manager.php"); exit();
+    // header("Location: labs_info_manager.php"); exit();
 }
 
 include 'header.php';
@@ -130,6 +136,17 @@ include 'header.php';
 <p><a href="labs_hub.php" class="btn-outline">&larr; Back to Hub</a></p>
 <hr>
 
+<?php if(isset($_SESSION['sys_msg']) && $_SESSION['sys_msg'] != ""): ?>
+    <div style="text-align:center; margin-bottom:20px; padding:12px; border-radius:6px; 
+                background-color: <?php echo ($_SESSION['sys_msg_color']=='green')?'#e8f5e9':'#fce4ec'; ?>; 
+                color: <?php echo ($_SESSION['sys_msg_color']=='green')?'#2e7d32':'#c62828'; ?>; border:1px solid transparent;">
+        <strong><?php echo $_SESSION['sys_msg']; ?></strong>
+    </div>
+    <?php 
+    unset($_SESSION['sys_msg']);
+    unset($_SESSION['sys_msg_color']);
+    ?>
+<?php endif; ?>
 <div class="create-section-box">
     <h3 style="margin-top:0;">Need a new Lab Info field?</h3>
     <button class="btn-toggle" onclick="toggle('new_sec_form_lab')">+ Create New Field</button>
@@ -149,6 +166,12 @@ include 'header.php';
                 </label>
             </div>
             
+            <div style="margin: 10px 0; text-align: left;">
+                <label style="display: inline-flex; align-items: center; cursor: pointer; color: #333;">
+                    <input type="checkbox" name="need_edit_option" value="1" style="width:auto; margin-right:8px;"> 
+                    Need Edit Option
+                </label>
+            </div>
             <div class="button-group">
                 <input type="submit" name="create_new_section" value="Create Field" class="btn-add">
                 <button type="button" class="btn-cancel" onclick="toggle('new_sec_form_lab')">Cancel</button>

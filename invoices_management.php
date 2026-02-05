@@ -16,7 +16,7 @@ if (isset($_GET['move_section']) && isset($_GET['dir'])) {
         mysqli_query($conn, "UPDATE $meta_table SET display_order = $t_order WHERE id = $id");
         mysqli_query($conn, "UPDATE $meta_table SET display_order = $curr_order WHERE id = $t_id");
     }
-    header("Location: invoices_management.php"); exit();
+    // header("Location: invoices_management.php"); exit();
 }
 
 if (isset($_POST['create_new_section'])) {
@@ -34,18 +34,25 @@ if (isset($_POST['create_new_section'])) {
         $col_check = mysqli_query($conn, "SHOW COLUMNS FROM `$data_table` LIKE '$col'");
         if(mysqli_num_rows($col_check) > 0) {
              $_SESSION['sys_msg'] = "Error: Name '$clean_name' is used by another column."; $_SESSION['sys_msg_color'] = "red";
-             header("Location: invoices_management.php"); exit();
+             // header("Location: invoices_management.php"); exit();
+        } else {
+            $max = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MAX(display_order) as m FROM $meta_table")); $next = $max['m'] + 1;
+            mysqli_query($conn, "INSERT INTO $meta_table (section_title, column_name, input_type, display_order) VALUES ('$title_safe', '$col', '$type', $next)");
+            
+            if ($type == 'numeric') { mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` INT DEFAULT 0"); }
+            elseif ($type == 'date') { mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` DATE"); } 
+            else { mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` VARCHAR(255)"); }
+            
+            // --- ADDED: Handle Edit Option Checkbox ---
+            if (isset($_POST['need_edit_option'])) {
+                mysqli_query($conn, "INSERT INTO invoices_edit_options (edit_options) VALUES ('$col')");
+            }
+            // ------------------------------------------
+            
+            $_SESSION['sys_msg'] = "Section Created Successfully"; $_SESSION['sys_msg_color'] = "green";
         }
-        $max = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MAX(display_order) as m FROM $meta_table")); $next = $max['m'] + 1;
-        mysqli_query($conn, "INSERT INTO $meta_table (section_title, column_name, input_type, display_order) VALUES ('$title_safe', '$col', '$type', $next)");
-        
-        if ($type == 'numeric') { mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` INT DEFAULT 0"); }
-        elseif ($type == 'date') { mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` DATE"); } 
-        else { mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` VARCHAR(255)"); }
-        
-        $_SESSION['sys_msg'] = "Section Created Successfully"; $_SESSION['sys_msg_color'] = "green";
     }
-    header("Location: invoices_management.php"); exit();
+    // header("Location: invoices_management.php"); exit();
 }
 
 if (isset($_POST['rename_section'])) {
@@ -71,7 +78,7 @@ if (isset($_POST['rename_section'])) {
         mysqli_query($conn, "UPDATE $meta_table SET section_title = '$new_name_safe', column_name = '$new_col' WHERE id = $id");
         $_SESSION['sys_msg'] = "Renamed Successfully"; $_SESSION['sys_msg_color'] = "green";
     }
-    header("Location: invoices_management.php"); exit();
+    // header("Location: invoices_management.php"); exit();
 }
 
 if (isset($_GET['remove_section'])) {
@@ -83,7 +90,7 @@ if (isset($_GET['remove_section'])) {
         mysqli_query($conn, "DELETE FROM $meta_table WHERE id = $id"); 
     }
     $_SESSION['sys_msg'] = "Section Removed"; $_SESSION['sys_msg_color'] = "red";
-    header("Location: invoices_management.php"); exit();
+    // header("Location: invoices_management.php"); exit();
 }
 
 include 'header.php';
@@ -92,6 +99,18 @@ include 'header.php';
 <h1><strong>Invoices Management</strong></h1>
 <p><a href="invoices_hub.php" class="btn-outline">&larr; Back to Hub</a></p>
 <hr>
+
+<?php if(isset($_SESSION['sys_msg']) && $_SESSION['sys_msg'] != ""): ?>
+    <div style="text-align:center; margin-bottom:20px; padding:12px; border-radius:6px; 
+                background-color: <?php echo ($_SESSION['sys_msg_color']=='green')?'#e8f5e9':'#fce4ec'; ?>; 
+                color: <?php echo ($_SESSION['sys_msg_color']=='green')?'#2e7d32':'#c62828'; ?>; border:1px solid transparent;">
+        <strong><?php echo $_SESSION['sys_msg']; ?></strong>
+    </div>
+    <?php 
+    unset($_SESSION['sys_msg']);
+    unset($_SESSION['sys_msg_color']);
+    ?>
+<?php endif; ?>
 <div class="create-section-box">
     <h3 style="margin-top:0;">Need a new input field?</h3>
     <button class="btn-toggle" onclick="toggle('new_sec_form_st')">+ Create New Section</button>
@@ -103,6 +122,13 @@ include 'header.php';
                 <option value="numeric">Numeric Only</option>
                 <option value="date">Date</option>
             </select>
+            
+            <div style="margin: 10px 0; text-align: left;">
+                <label style="display: inline-flex; align-items: center; cursor: pointer; color: #333;">
+                    <input type="checkbox" name="need_edit_option" value="1" style="width:auto; margin-right:8px;"> 
+                    Need Edit Option
+                </label>
+            </div>
             <div class="button-group">
                 <input type="submit" name="create_new_section" value="Create Field" class="btn-add">
                 <button type="button" class="btn-cancel" onclick="toggle('new_sec_form_st')">Cancel</button>

@@ -1,153 +1,137 @@
--- 1. Table to store admin credentials and permissions
-CREATE TABLE `admins` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `username` varchar(255) NOT NULL,
-  `password` varchar(255) NOT NULL,
-  `permissions` varchar(50) DEFAULT 'Full', -- Stores 'Full' or 'Partial'
-  `created_by` varchar(255) DEFAULT NULL,
-  `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+-- =============================================================
+-- 1. INVOICES MANAGEMENT & LOGS
+-- Files: invoices_management.php, invoices_log.php
+-- =============================================================
+
+-- [DDL] Table Modifications (Dynamic Columns)
+ALTER TABLE `storage_unit` ADD COLUMN `{column_name}` INT DEFAULT 0;
+ALTER TABLE `storage_unit` ADD COLUMN `{column_name}` DATE;
+ALTER TABLE `storage_unit` ADD COLUMN `{column_name}` VARCHAR(255);
+ALTER TABLE `storage_unit` CHANGE `{old_column}` `{new_column}` {DATA_TYPE};
+ALTER TABLE `storage_unit` DROP COLUMN `{column_name}`;
+
+-- [DML] Configuration & Metadata
+SELECT id, display_order FROM storage_sections WHERE id = {id};
+SELECT id, display_order FROM storage_sections WHERE display_order < {current_order} ORDER BY display_order DESC LIMIT 1;
+SELECT id, display_order FROM storage_sections WHERE display_order > {current_order} ORDER BY display_order ASC LIMIT 1;
+UPDATE storage_sections SET display_order = {new_order} WHERE id = {id};
+SELECT id FROM storage_sections WHERE section_title = '{title}';
+SELECT MAX(display_order) as m FROM storage_sections;
+INSERT INTO storage_sections (section_title, column_name, input_type, display_order) VALUES ('{title}', '{col_name}', '{type}', {order});
+SELECT column_name, input_type FROM storage_sections WHERE id = {id};
+UPDATE storage_sections SET section_title = '{new_title}', column_name = '{new_col}' WHERE id = {id};
+DELETE FROM storage_sections WHERE id = {id};
+SELECT * FROM storage_sections ORDER BY display_order ASC;
+
+-- [DML] Edit Options Permissions
+INSERT INTO invoices_edit_options (edit_options) VALUES ('{column_name}');
+SELECT id FROM invoices_edit_options WHERE edit_options = '{column_name}';
+SELECT edit_options FROM invoices_edit_options;
+
+-- [DML] Log Data Operations
+SELECT * FROM storage_unit ORDER BY created_at DESC;
+UPDATE storage_unit SET `{column_name}` = '{new_value}' WHERE id = {id};
+DELETE FROM storage_unit WHERE id = {id};
+
+
+-- =============================================================
+-- 2. LABS INFORMATION & MANAGEMENT
+-- Files: labs_info_manager.php, labs_info.php
+-- =============================================================
+
+-- [DDL] Table Modifications
+ALTER TABLE `labs_unit` ADD COLUMN `{column_name}` INT {DEFAULT} {UNIQUE};
+ALTER TABLE `labs_unit` ADD COLUMN `{column_name}` DATE {DEFAULT} {UNIQUE};
+ALTER TABLE `labs_unit` ADD COLUMN `{column_name}` VARCHAR(255) {DEFAULT} {UNIQUE};
+ALTER TABLE `labs_unit` CHANGE `{old_column}` `{new_column}` {DATA_TYPE};
+ALTER TABLE `labs_unit` DROP COLUMN `{column_name}`;
+
+-- [DML] Configuration & Metadata
+SELECT id, display_order FROM labs_sections WHERE id = {id};
+SELECT id, display_order FROM labs_sections WHERE display_order < {curr} ORDER BY display_order DESC LIMIT 1;
+SELECT id, display_order FROM labs_sections WHERE display_order > {curr} ORDER BY display_order ASC LIMIT 1;
+UPDATE labs_sections SET display_order = {order} WHERE id = {id};
+SELECT id FROM labs_sections WHERE section_title = '{title}';
+INSERT INTO labs_sections (section_title, column_name, input_type, display_order) VALUES ('{title}', '{col}', '{type}', {order});
+UPDATE labs_sections SET section_title = '{title}', column_name = '{col}' WHERE id = {id};
+DELETE FROM labs_sections WHERE id = {id};
+SELECT * FROM labs_sections ORDER BY display_order ASC;
+
+-- [DML] Edit Options Permissions
+INSERT INTO labs_edit_options (edit_options) VALUES ('{column_name}');
+SELECT id FROM labs_edit_options WHERE edit_options = '{column_name}';
+SELECT edit_options FROM labs_edit_options;
+
+-- [DML] Data Retrieval & Reporting
+SELECT * FROM labs_unit WHERE lab_name = '{lab_name}' LIMIT 1;
+UPDATE labs_unit SET `{column_name}` = '{value}' WHERE id = {id};
+SELECT name, table_lab_name FROM lab_name;
+SELECT system_number FROM `{dynamic_lab_table}` ORDER BY id ASC;
+SELECT * FROM `{dynamic_lab_table}` WHERE system_number = '{system_number}' LIMIT 1;
+UPDATE `{dynamic_lab_table}` SET `{column_name}` = '{value}' WHERE id = {id};
+
+-- [DML] Complaint Statistics
+SELECT 
+    COUNT(*) as total_complaints,
+    SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as total_pending,
+    SUM(CASE WHEN status LIKE 'Partially Completed%' THEN 1 ELSE 0 END) as total_partial
+FROM complaints_log main
+WHERE `{lab_col}` = '{lab_name}' 
+AND `{sys_col}` = '{system_number}'
+AND id = (SELECT MAX(sub.id) FROM complaints_log sub WHERE sub.parent_id = main.parent_id);
+
+
+-- =============================================================
+-- 3. SYSTEMS INFORMATION MANAGEMENT
+-- Files: systems_info_manager.php
+-- =============================================================
+
+-- [DDL] Dynamic Table Updates (Applies to all Lab Tables)
+ALTER TABLE `{lab_table_name}` ADD COLUMN `{column_name}` TEXT DEFAULT NULL;
+ALTER TABLE `{lab_table_name}` CHANGE `{old_col}` `{new_col}` TEXT DEFAULT NULL;
+ALTER TABLE `{lab_table_name}` DROP COLUMN `{column_name}`;
+
+-- [DML] Configuration & Metadata
+INSERT INTO systems_sections (section_title, column_name, input_type, display_order) VALUES ('{title}', '{col}', 'text', {order});
+UPDATE systems_sections SET section_title = '{title}', column_name = '{col}' WHERE id = {id};
+DELETE FROM systems_sections WHERE id = {id};
+SELECT * FROM systems_sections ORDER BY display_order ASC;
+
+-- [DML] Edit Options Permissions
+INSERT INTO systems_edit_options (edit_options) VALUES ('{column_name}');
+SELECT id FROM systems_edit_options WHERE edit_options = '{column_name}';
+SELECT edit_options FROM systems_edit_options;
+
+
+-- =============================================================
+-- 4. GENERAL CONFIGURATION & SETUP
+-- Files: manage_config.php
+-- =============================================================
+
+-- [DDL] Dynamic Tables for Dropdowns/Sections
+CREATE TABLE `{option_table_name}` (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100), UNIQUE(name));
+DROP TABLE IF EXISTS `{option_table_name}`;
+RENAME TABLE `{old_table}` TO `{new_table}`;
+
+-- [DDL] Lab Table Creation (Auto-generated)
+CREATE TABLE IF NOT EXISTS `{generated_lab_table}` (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    system_number VARCHAR(100) NOT NULL,
+    os VARCHAR(100),
+    config_details TEXT,
+    UNIQUE(system_number)
 );
 
--- Insert a default Super Admin (Username: admin, Password: admin123)
-INSERT INTO `admins` (`username`, `password`, `permissions`, `created_by`) VALUES 
-('admin', 'admin123', 'Full', 'System');
+-- [DDL] Complaint Table Updates
+ALTER TABLE `complaints` ADD COLUMN `{column_name}` VARCHAR(255);
+ALTER TABLE `complaints_log` ADD COLUMN `{column_name}` VARCHAR(255);
+ALTER TABLE `complaints` CHANGE `{old_col}` `{new_col}` VARCHAR(255);
+ALTER TABLE `complaints_log` CHANGE `{old_col}` `{new_col}` VARCHAR(255);
+ALTER TABLE `complaints` DROP COLUMN `{column_name}`;
+ALTER TABLE `complaints_log` DROP COLUMN `{column_name}`;
 
--- ---------------------------------------------------------------------
-
--- 2. Configuration Tables
--- A. Compliant form Sections
-CREATE TABLE `dynamic_sections` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `column_name` varchar(255) NOT NULL,  -- Matches the column in 'complaints' table
-  `section_title` varchar(255) NOT NULL, -- Label shown to the user
-  `input_type` varchar(50) DEFAULT 'text',
-  `display_order` int(11) DEFAULT 0,
-  PRIMARY KEY (`id`)
-);
-
--- Default fields required by your system logic
-INSERT INTO `dynamic_sections` (`column_name`, `section_title`, `input_type`, `display_order`) VALUES
-('lab_name', 'Lab Name', 'text', 1),
-('system_number', 'System Number', 'text', 2),
-('room_number', 'Room Number', 'text', 3),
-('email', 'Email', 'email', 4);
-
--- B. Lab Personnal Sections
-CREATE TABLE `labs_sections` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `column_name` varchar(255) NOT NULL,
-  `section_title` varchar(255) NOT NULL,
-  `display_order` int(11) DEFAULT 0,
-  PRIMARY KEY (`id`)
-);
-
--- Default personnel fields
-INSERT INTO `labs_sections` (`column_name`, `section_title`, `display_order`) VALUES
-('lab_incharge', 'Lab Incharge', 1),
-('programmer', 'Programmer', 2);
-
--- C. System Hardware Sections
-CREATE TABLE `systems_sections` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `column_name` varchar(255) NOT NULL,
-  `section_title` varchar(255) NOT NULL,
-  PRIMARY KEY (`id`)
-);
-
--- Default hardware fields
-INSERT INTO `systems_sections` (`column_name`, `section_title`) VALUES
-('os', 'Operating System'),
-('processor', 'Processor'),
-('ram', 'RAM'),
-('monitor', 'Monitor'),
-('keyboard', 'Keyboard'),
-('mouse', 'Mouse');
-
--- 3. Complaints & Logs
--- Main active complaints table
-CREATE TABLE `complaints` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `parent_id` int(11) DEFAULT NULL,
-  `other_details` text,
-  `status` varchar(50) DEFAULT 'Pending',
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `issue_fixed_at` datetime DEFAULT NULL,
-  `partially_completed_at` datetime DEFAULT NULL,
-  -- Dynamic columns (Must match 'dynamic_sections')
-  `lab_name` varchar(255),
-  `system_number` varchar(255),
-  `room_number` varchar(255),
-  `email` varchar(255),
-  PRIMARY KEY (`id`)
-);
-
--- Log table for history and updates (Structure matches 'complaints')
-CREATE TABLE `complaints_log` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `parent_id` int(11) DEFAULT NULL,
-  `other_details` text,
-  `status` varchar(50) DEFAULT 'Pending',
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `issue_fixed_at` datetime DEFAULT NULL,
-  `partially_completed_at` datetime DEFAULT NULL,
-  -- Dynamic columns
-  `lab_name` varchar(255),
-  `system_number` varchar(255),
-  `room_number` varchar(255),
-  `email` varchar(255),
-  PRIMARY KEY (`id`)
-);
-
--- 4. Lab Management & Systems
--- A. Master Lab List
-CREATE TABLE `lab_name` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) NOT NULL,       -- e.g., 'Lab 1'
-  `table_lab_name` varchar(255) NOT NULL, -- e.g., 'lab_1_systems'
-  PRIMARY KEY (`id`)
-);
-
--- Example Data
-INSERT INTO `lab_name` (`name`, `table_lab_name`) VALUES 
-('Lab 1', 'lab_1_systems'),
-('Lab 2', 'lab_2_systems');
-
--- B. Lab Unit Details
-CREATE TABLE `labs_unit` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `lab_name` varchar(255) NOT NULL,
-  -- Dynamic columns derived from 'labs_sections'
-  `lab_incharge` varchar(255),
-  `programmer` varchar(255),
-  PRIMARY KEY (`id`)
-);
-
--- C. Specific System Tables
--- Important: You must create one table for each lab you defined in lab_name
--- Example Table for 'Lab 1'
-CREATE TABLE `lab_1_systems` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `system_number` varchar(255) NOT NULL,
-  -- Dynamic columns derived from 'systems_sections'
-  `os` varchar(255),
-  `processor` varchar(255),
-  `ram` varchar(255),
-  `monitor` varchar(255),
-  `keyboard` varchar(255),
-  `mouse` varchar(255),
-  PRIMARY KEY (`id`)
-);
-
--- Example Table for 'Lab 2'
-CREATE TABLE `lab_2_systems` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `system_number` varchar(255) NOT NULL,
-  `os` varchar(255),
-  `processor` varchar(255),
-  `ram` varchar(255),
-  `monitor` varchar(255),
-  `keyboard` varchar(255),
-  `mouse` varchar(255),
-  PRIMARY KEY (`id`)
-);
+-- [DML] Configuration Data
+INSERT INTO dynamic_sections (section_title, column_name, input_type, display_order, is_unique) VALUES (...);
+INSERT INTO lab_series_config (lab_name, prefix, start_no, end_no, padding) VALUES (...) ON DUPLICATE KEY UPDATE ...;
+INSERT INTO `{option_table}` (name, table_lab_name) VALUES ('{value}', '{table_ref}');
+DELETE FROM `{option_table}` WHERE id={id};
