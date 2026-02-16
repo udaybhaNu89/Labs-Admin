@@ -320,7 +320,7 @@ if ($user_permission === 'Partial' && in_array($current_page, $restricted_pages)
     </div>
 
     <div class="main-header">
-        <img src="logo.png" alt="Company Logo">
+        <img src="pscmrLogo.png" alt="Company Logo">
         <h2>PSCMRCET LABS ADMIN PANEL</h2>
     </div>
 
