@@ -49,6 +49,10 @@ $restricted_pages = [
     'invoices_hub.php', 
     'invoices_management.php', 
     'invoices_log.php',
+    'export_hub.php',
+    'export_labs.php',
+    'export_lab_systems.php',
+    'export_systems.php',
     'manage_admins.php'
 ];
 
@@ -305,6 +309,7 @@ if ($user_permission === 'Partial' && in_array($current_page, $restricted_pages)
                 <a href="manage_config.php" class="<?php echo ($current_page=='manage_config.php')?'active':''; ?>">Manage Complaint Options</a>
                 <a href="labs_hub.php" class="<?php echo (in_array($current_page, ['labs_hub.php', 'labs_info_form.php', 'labs_info_manager.php', 'labs_info_logs.php', 'labs_info.php', 'systems_info_manager.php', 'systems_info_form.php']))?'active':''; ?>">Labs Hub</a>
                 <a href="invoices_hub.php" class="<?php echo (in_array($current_page, ['invoices_hub.php', 'invoices_form.php', 'invoices_management.php', 'invoices_log.php']))?'active':''; ?>">Invoices Hub</a>
+                <a href="export_hub.php" class="<?php echo (in_array($current_page, ['export_hub.php', 'export_labs.php', 'export_lab_systems.php', 'export_systems.php']))?'active':''; ?>">Export Hub</a>
                 <a href="manage_admins.php" class="<?php echo ($current_page=='manage_admins.php')?'active':''; ?>">Manage Admins</a>
             <?php endif; ?>
         </div>

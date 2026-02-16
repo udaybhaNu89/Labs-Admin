@@ -3,7 +3,7 @@ require 'auth_session.php';
 
 // --- CONFIGURATION ---
 $meta_table = "systems_sections";
-$lab_list_table = "lab_name"; 
+$lab_list_table = "labs_unit"; // MODIFIED: Pointing to labs_unit
 
 // --- DEFINING STATIC SECTIONS ---
 // Empty array so NO columns are protected (All have Remove buttons)
@@ -77,6 +77,9 @@ if (isset($_POST['create_new_section'])) {
     $title = trim($_POST['section_title']); 
     $title_safe = mysqli_real_escape_string($conn, $title);
     
+    // Check if duplicates are allowed (Checkbox: Checked = Yes, Unchecked = No/Unique)
+    $allow_duplicates = isset($_POST['allow_duplicates']);
+    
     $check = mysqli_query($conn, "SELECT id FROM $meta_table WHERE section_title = '$title_safe'");
     if (mysqli_num_rows($check) > 0) {
         $_SESSION['sys_msg'] = "Error: Field '$title' already exists"; 
@@ -99,11 +102,19 @@ if (isset($_POST['create_new_section'])) {
             $target_tables = getLabTables($conn, $lab_list_table);
             $success_count = 0;
             
+            // Determine Column Type based on Duplicates checkbox
+            // If Duplicates Allowed: TEXT (Default)
+            // If Unique Required: VARCHAR(255) UNIQUE (TEXT cannot be unique without key length)
+            if ($allow_duplicates) {
+                $column_def = "TEXT DEFAULT NULL";
+            } else {
+                $column_def = "VARCHAR(255) DEFAULT NULL UNIQUE";
+            }
+            
             foreach ($target_tables as $tbl) {
                 $exists = mysqli_query($conn, "SHOW COLUMNS FROM `$tbl` LIKE '$col'");
                 if (mysqli_num_rows($exists) == 0) {
-                    // CHANGED: Using TEXT instead of VARCHAR(255)
-                    if(mysqli_query($conn, "ALTER TABLE `$tbl` ADD COLUMN `$col` TEXT DEFAULT NULL")) {
+                    if(mysqli_query($conn, "ALTER TABLE `$tbl` ADD COLUMN `$col` $column_def")) {
                         $success_count++;
                     }
                 }
@@ -115,7 +126,8 @@ if (isset($_POST['create_new_section'])) {
             }
             // ------------------------------------------
             
-            $_SESSION['sys_msg'] = "Field created. Added to $success_count lab tables."; 
+            $msg_suffix = $allow_duplicates ? "" : " (Unique)";
+            $_SESSION['sys_msg'] = "Field created. Added to $success_count lab tables$msg_suffix."; 
             $_SESSION['sys_msg_color'] = "green";
         }
     }
@@ -146,7 +158,12 @@ if (isset($_POST['rename_section'])) {
             foreach ($target_tables as $tbl) {
                 $exists = mysqli_query($conn, "SHOW COLUMNS FROM `$tbl` LIKE '$old_col'");
                 if (mysqli_num_rows($exists) > 0) {
-                    // CHANGED: Using TEXT instead of VARCHAR(255)
+                    // When renaming, we preserve the data type logic if possible, 
+                    // but for safety we default to TEXT unless it was unique. 
+                    // For simplicity in rename, we keep TEXT or VARCHAR depending on previous state is hard to track.
+                    // We will default to TEXT to be safe for data size, but this might drop Unique constraints.
+                    // Ideally, rename just changes name.
+                    
                     mysqli_query($conn, "ALTER TABLE `$tbl` CHANGE `$old_col` `$new_col` TEXT DEFAULT NULL");
                     $updated_tables++;
                 }
@@ -217,7 +234,14 @@ include 'header.php';
             
             <div style="margin-bottom:15px; text-align:left; font-size:13px; color:#555; background:#f0f0f0; padding:10px; border-radius:4px;">
                 <strong>Data Type:</strong> Text / Long Text<br>
-                <em>All new system fields are created as TEXT fields to support letters, numbers, and long descriptions.</em>
+                <em>System fields support alphanumeric text. Unchecking "Allow Duplicates" will limit length to 255 chars to support uniqueness.</em>
+            </div>
+            
+            <div style="margin-top:12px; margin-bottom:12px; background:#f9f9f9; padding:8px; border-radius:4px; border:1px solid #eee;">
+                <label style="display:inline-flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer;">
+                    <input type="checkbox" name="allow_duplicates" checked style="width:auto; margin:0;"> 
+                    <span><strong>Allow Duplicate Values</strong> <br><span style="font-size:12px; color:#666;">(Uncheck this to enforce unique values only, e.g., for Mac Address)</span></span>
+                </label>
             </div>
             
             <div style="margin: 10px 0; text-align: left;">

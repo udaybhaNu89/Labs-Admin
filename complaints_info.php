@@ -3,6 +3,8 @@ require 'auth_session.php';
 
 // --- DASHBOARD ACTIONS ---
 
+$user_name = isset($_SESSION['admin_user']) ? htmlspecialchars($_SESSION['admin_user']) : 'ADMIN';
+
 // 1. Delete Complaint (ONLY FROM MAIN TABLE)
 if (isset($_GET['delete_complaint'])) {
     $id = intval($_GET['delete_complaint']);
@@ -21,7 +23,7 @@ if (isset($_GET['delete_complaint'])) {
     } else {
         $_SESSION['sys_msg'] = "Error: Complaint not found"; $_SESSION['sys_msg_color'] = "red";
     }
-    header("Location: complaints_info.php"); exit();
+    // header("Location: complaints_info.php"); exit();
 }
 
 // 2. Mark as Completed (INSERT ROW TO BOTH TABLES)
@@ -79,18 +81,21 @@ if (isset($_GET['mark_complete'])) {
         }
 
         // A. Insert into COMPLAINTS
-        $insert_sql = "INSERT INTO complaints (other_details, status, issue_fixed_at, parent_id, created_at $col_sql) 
-                       VALUES ('$orig_details', 'Completed', NOW(), '$parent_id', '$orig_date' $val_sql)";
+        $insert_sql = "INSERT INTO complaints (complaint_modified_by, other_details, status, issue_fixed_at, parent_id, created_at $col_sql) 
+                       VALUES ('$user_name', '$orig_details', 'Completed', NOW(), '$parent_id', '$orig_date' $val_sql)";
         mysqli_query($conn, $insert_sql);
 
         // B. Insert into COMPLAINTS_LOG
-        $insert_log_sql = "INSERT INTO complaints_log (other_details, status, issue_fixed_at, parent_id, created_at $col_sql) 
-                           VALUES ('$orig_details', 'Completed', NOW(), '$parent_id', '$orig_date' $val_sql)";
+        $insert_log_sql = "INSERT INTO complaints_log (complaint_modified_by, other_details, status, issue_fixed_at, parent_id, created_at $col_sql) 
+                           VALUES ('$user_name', '$orig_details', 'Completed', NOW(), '$parent_id', '$orig_date' $val_sql)";
         mysqli_query($conn, $insert_log_sql);
     }
 
-    $_SESSION['sys_msg'] = "Status Updated to Completed"; $_SESSION['sys_msg_color'] = "green";
-    header("Location: complaints_info.php"); exit();
+    // UPDATED MESSAGE
+    $_SESSION['sys_msg'] = "Complaint Marked as Complete by " . $user_name; 
+    $_SESSION['sys_msg_color'] = "green";
+    
+    // header("Location: complaints_info.php"); exit();
 }
 
 // 3. Mark as Partially Completed (INSERT ROW TO BOTH TABLES)
@@ -150,16 +155,18 @@ if (isset($_POST['submit_partial'])) {
         }
         
         // A. Insert into COMPLAINTS
-        $insert_sql = "INSERT INTO complaints (other_details, status, partially_completed_at, parent_id, created_at $col_sql) 
-                       VALUES ('$orig_details', '$status_text', NOW(), '$parent_id', '$orig_date' $val_sql)";
+        $insert_sql = "INSERT INTO complaints (complaint_modified_by, other_details, status, partially_completed_at, parent_id, created_at $col_sql) 
+                       VALUES ('$user_name', '$orig_details', '$status_text', NOW(), '$parent_id', '$orig_date' $val_sql)";
         mysqli_query($conn, $insert_sql);
 
         // B. Insert into COMPLAINTS_LOG
-        $insert_log_sql = "INSERT INTO complaints_log (other_details, status, partially_completed_at, parent_id, created_at $col_sql) 
-                           VALUES ('$orig_details', '$status_text', NOW(), '$parent_id', '$orig_date' $val_sql)";
+        $insert_log_sql = "INSERT INTO complaints_log (complaint_modified_by, other_details, status, partially_completed_at, parent_id, created_at $col_sql) 
+                           VALUES ('$user_name', '$orig_details', '$status_text', NOW(), '$parent_id', '$orig_date' $val_sql)";
         mysqli_query($conn, $insert_log_sql);
 
-        $_SESSION['sys_msg'] = "Partial Status Recorded"; $_SESSION['sys_msg_color'] = "green";
+        // UPDATED MESSAGE
+        $_SESSION['sys_msg'] = "Complaint Marked as Partially Completed: " . stripslashes($desc) . " by " . $user_name; 
+        $_SESSION['sys_msg_color'] = "green";
     }
     header("Location: complaints_info.php"); exit();
 }
@@ -168,6 +175,10 @@ include 'header.php';
 ?>
 
 <style>
+    /* --- NEW ROW COLORS --- */
+    tr.row-pending { background-color: #fa5650 !important; } /* Light Red */
+    tr.row-partial { background-color: #fad250 !important; } /* Light Yellow */
+    
     .status-pending { color: #e67e22; font-weight: bold; background: #fff3e0; padding: 4px 8px; border-radius: 4px; font-size: 12px; display: inline-block; }
     .status-completed { color: #27ae60; font-weight: bold; background: #e8f5e9; padding: 4px 8px; border-radius: 4px; font-size: 12px; display: inline-block; }
     .status-partial { color: #f39c12; font-weight: bold; background: #fef9e7; padding: 4px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #f39c12; display: inline-block; max-width: 250px; white-space: normal; text-align: left; }
@@ -232,9 +243,20 @@ $num_complaints = mysqli_num_rows($result);
             <th>Date Reported</th>
             <th>Partially Completed At</th>
             <th>Issue Fixed At</th>
+            <th>Complaint Modified By</th>
         </tr>
-        <?php while ($row = mysqli_fetch_assoc($result)): ?>
-            <tr>
+        <?php while ($row = mysqli_fetch_assoc($result)): 
+            // --- Determine Row Class based on Status ---
+            $row_class = "";
+            $status_check = $row['status'];
+            
+            if ($status_check == 'Pending') {
+                $row_class = "class='row-pending'";
+            } elseif (strpos($status_check, 'Partially Completed') === 0) {
+                $row_class = "class='row-partial'";
+            }
+        ?>
+            <tr <?php echo $row_class; ?>>
                 <?php foreach ($sections as $sec) {
                     $col = $sec['column_name'];
                     $val = (!empty($row[$col])) ? $row[$col] : "-";
@@ -267,6 +289,7 @@ $num_complaints = mysqli_num_rows($result);
                 <td><?php echo $row['created_at']; ?></td>
                 <td><?php echo (!empty($row['partially_completed_at'])) ? $row['partially_completed_at'] : "-"; ?></td>
                 <td><?php echo (!empty($row['issue_fixed_at'])) ? $row['issue_fixed_at'] : "-"; ?></td>
+                <td><?php echo (!empty($row['complaint_modified_by'])) ? $row['complaint_modified_by'] : "-"; ?></td>
             </tr>
         <?php endwhile; ?>
     </table>

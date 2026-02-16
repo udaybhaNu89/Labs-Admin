@@ -42,23 +42,44 @@ if ($sec_check_res) {
 }
 // =================================================================
 
-// --- 2. FETCH LAB CONFIGURATION (For Dynamic JS) ---
-$lab_config_data = [];
-$tbl_check = mysqli_query($conn, "SHOW TABLES LIKE 'lab_series_config'");
-if (mysqli_num_rows($tbl_check) > 0) {
-    $config_res = mysqli_query($conn, "SELECT * FROM lab_series_config");
-    if ($config_res) {
-        while ($row = mysqli_fetch_assoc($config_res)) {
-            $lab_config_data[$row['lab_name']] = [
-                'prefix'  => $row['prefix'],
-                'start'   => (int)$row['start_no'],
-                'end'     => (int)$row['end_no'],
-                'padding' => (int)$row['padding']
-            ];
+// --- 2. FETCH LAB SYSTEMS (Dynamic from Database Tables) ---
+$lab_systems_data = [];
+$unit_check = mysqli_query($conn, "SHOW TABLES LIKE 'labs_unit'");
+
+if (mysqli_num_rows($unit_check) > 0) {
+    // Fetch all Labs
+    $res = mysqli_query($conn, "SELECT * FROM labs_unit");
+    while ($row = mysqli_fetch_assoc($res)) {
+        $l_name = $row['lab_name'];
+        
+        // Determine the table name (Prefer 'lab_name_table', fallback to 'table_lab_name' or auto-generate)
+        $t_name = isset($row['lab_name_table']) ? $row['lab_name_table'] : (isset($row['table_lab_name']) ? $row['table_lab_name'] : '');
+        
+        // If empty, try to guess based on standard format (e.g. "Lab 01" -> "lab_01")
+        if (empty($t_name)) {
+             $t_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $l_name));
+             $t_name = trim($t_name, '_');
         }
+
+        $systems = [];
+        
+        // Check if the specific lab table exists
+        $tbl_exists = mysqli_query($conn, "SHOW TABLES LIKE '$t_name'");
+        if (mysqli_num_rows($tbl_exists) > 0) {
+            // Check if 'system_number' column exists in that table
+            $col_exists = mysqli_query($conn, "SHOW COLUMNS FROM `$t_name` LIKE 'system_number'");
+            if (mysqli_num_rows($col_exists) > 0) {
+                // Fetch all system numbers
+                $sys_res = mysqli_query($conn, "SELECT system_number FROM `$t_name` ORDER BY id ASC");
+                while ($s = mysqli_fetch_assoc($sys_res)) {
+                    $systems[] = $s['system_number'];
+                }
+            }
+        }
+        $lab_systems_data[$l_name] = $systems;
     }
 }
-$json_lab_config = json_encode($lab_config_data);
+$json_lab_systems = json_encode($lab_systems_data);
 // ----------------------------------------------------
 
 if (isset($_POST['submit_complaint'])) {
@@ -218,28 +239,64 @@ if (isset($_POST['submit_complaint'])) {
                     echo "<textarea name='$col' placeholder='Your answer' required></textarea>";
                 }
                 else {
-                    $check_table = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
-                    if (mysqli_num_rows($check_table) > 0) {
-                        $options = [];
-                        $opts_query = mysqli_query($conn, "SELECT * FROM `$table`");
-                        while ($r = mysqli_fetch_assoc($opts_query)) { $options[] = $r; }
-                        usort($options, function($a, $b) { return strnatcasecmp($a['name'], $b['name']); });
-
+                    // --- SPECIAL HANDLING: System Number ---
+                    // Since System Number is dependent on Lab Name, we render an empty dropdown initially.
+                    // This avoids looking for a "system_number" table which might not exist.
+                    if ($col == 'system_number') {
                         if ($type == 'dropdown') {
                             echo "<select name='$col' required>";
                             echo "<option value='' disabled selected>Choose</option>";
-                            foreach ($options as $r) { echo "<option value='".$r['name']."'>".$r['name']."</option>"; }
                             echo "</select>";
-                        } else {
-                            echo '<div class="checkbox-group">';
-                            if (count($options) > 0) {
-                                foreach ($options as $r) { 
-                                    echo '<label class="checkbox-option"><input type="checkbox" name=\''.$col.'[]\' value=\''.$r['name'].'\'>'.$r['name'].'</label>';
-                                }
-                            } else { echo "<span style='color:#999; font-size:13px;'>No options found.</span>"; }
-                            echo '</div>';
                         }
-                    } else { echo "<p style='color:red; font-size:13px;'>Error: Configuration table '$table' not found.</p>"; }
+                    }
+                    else {
+                        // --- SWITCH to labs_unit for Lab Name AND Room No lookup ---
+                        if ($col == 'lab_name' || $col == 'room_no') {
+                            $target_table = 'labs_unit';
+                        } else {
+                            $target_table = $table;
+                        }
+                        
+                        $check_table = mysqli_query($conn, "SHOW TABLES LIKE '$target_table'");
+                        if (mysqli_num_rows($check_table) > 0) {
+                            $options = [];
+                            
+                            // Select correct column based on section type
+                            if ($col == 'lab_name') {
+                                $opts_query = mysqli_query($conn, "SELECT lab_name as name FROM labs_unit ORDER BY lab_name ASC");
+                            } elseif ($col == 'room_no') {
+                                // Fetch UNIQUE room numbers
+                                $opts_query = mysqli_query($conn, "SELECT DISTINCT room_no as name FROM labs_unit ORDER BY room_no ASC");
+                            } else {
+                                $opts_query = mysqli_query($conn, "SELECT * FROM `$target_table`");
+                            }
+
+                            if ($opts_query) {
+                                while ($r = mysqli_fetch_assoc($opts_query)) { 
+                                    if(!empty($r['name'])) {
+                                        $options[] = $r; 
+                                    }
+                                }
+                            }
+                            
+                            usort($options, function($a, $b) { return strnatcasecmp($a['name'], $b['name']); });
+
+                            if ($type == 'dropdown') {
+                                echo "<select name='$col' required>";
+                                echo "<option value='' disabled selected>Choose</option>";
+                                foreach ($options as $r) { echo "<option value='".$r['name']."'>".$r['name']."</option>"; }
+                                echo "</select>";
+                            } else {
+                                echo '<div class="checkbox-group">';
+                                if (count($options) > 0) {
+                                    foreach ($options as $r) { 
+                                        echo '<label class="checkbox-option"><input type="checkbox" name=\''.$col.'[]\' value=\''.$r['name'].'\'>'.$r['name'].'</label>';
+                                    }
+                                } else { echo "<span style='color:#999; font-size:13px;'>No options found.</span>"; }
+                                echo '</div>';
+                            }
+                        } else { echo "<p style='color:red; font-size:13px;'>Error: Configuration table '$table' not found.</p>"; }
+                    }
                 }
                 echo '</div>';
             }
@@ -265,8 +322,8 @@ if (isset($_POST['submit_complaint'])) {
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         
-        // Pass PHP Config to JS safely (Using the JSON from Database)
-        const labConfig = <?php echo $json_lab_config ?: '{}'; ?>;
+        // Pass PHP Systems Data to JS
+        const labSystems = <?php echo $json_lab_systems ?: '{}'; ?>;
 
         const labSelect = document.querySelector('select[name="lab_name"]');
         const sysSelect = document.querySelector('select[name="system_number"]');
@@ -274,22 +331,19 @@ if (isset($_POST['submit_complaint'])) {
         if (labSelect && sysSelect) {
             labSelect.addEventListener('change', function() {
                 const selectedLab = this.value;
-                const config = labConfig[selectedLab];
+                const systems = labSystems[selectedLab];
 
                 // Reset System Dropdown
                 sysSelect.innerHTML = '<option value="" disabled selected>Select System</option>';
 
-                if (config) {
-                    // Generate Series
-                    for (let i = config.start; i <= config.end; i++) {
-                        let numStr = i.toString().padStart(config.padding, '0'); 
-                        let code = config.prefix + numStr;
-                        
+                if (systems && systems.length > 0) {
+                    // Populate from DB list
+                    systems.forEach(function(sys) {
                         let opt = document.createElement('option');
-                        opt.value = code;
-                        opt.textContent = code;
+                        opt.value = sys;
+                        opt.textContent = sys;
                         sysSelect.appendChild(opt);
-                    }
+                    });
                 } else {
                     // Fallback
                     let opt = document.createElement('option');

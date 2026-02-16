@@ -74,7 +74,6 @@ if ($view) {
         }
 
         // 3. Apply Natural Sort by 'lab_name'
-        // This ensures 'Lab 2' comes before 'Lab 10'
         usort($table_rows, function($a, $b) {
             $nameA = isset($a['lab_name']) ? $a['lab_name'] : '';
             $nameB = isset($b['lab_name']) ? $b['lab_name'] : '';
@@ -110,6 +109,10 @@ if ($view) {
 ?>
 
 <style>
+    /* --- NEW ROW COLORS (Matching Complaints Info) --- */
+    tr.row-pending { background-color: #fa5650 !important; } /* Light Red */
+    tr.row-partial { background-color: #fad250 !important; } /* Light Yellow */
+
     .stats-container {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -136,7 +139,7 @@ if ($view) {
     .status-completed { color: #27ae60; font-weight: bold; background: #e8f5e9; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
     .status-partial { color: #f39c12; font-weight: bold; background: #fef9e7; padding: 4px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #f39c12; }
     
-    .active-card .stat-card { background-color: #f8f9fa; border-bottom: 4px solid #333; }
+    .active-card .stat-card { background-color: #f8f9fa; border-bottom: 4px solid #b5b5b5; }
 </style>
 
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -203,8 +206,19 @@ if ($view) {
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($table_rows as $row): ?>
-                        <tr>
+                    <?php foreach ($table_rows as $row): 
+                        // --- Determine Row Color Class ---
+                        $row_class = "";
+                        if (!$is_labs_view) {
+                            $status_check = isset($row['status']) ? $row['status'] : '';
+                            if ($status_check == 'Pending') {
+                                $row_class = "class='row-pending'";
+                            } elseif (strpos($status_check, 'Partially Completed') === 0) {
+                                $row_class = "class='row-partial'";
+                            }
+                        }
+                    ?>
+                        <tr <?php echo $row_class; ?>>
                             <?php if ($is_labs_view): ?>
                                 <?php foreach ($sections as $sec) {
                                     $col = $sec['column_name'];
@@ -254,7 +268,7 @@ if ($view) {
 <script>
     setTimeout(function() {
         window.location.reload();
-    }, 45000); // 45000 milliseconds = 45 seconds
+    }, 30000); // 30000 milliseconds = 30 seconds
 </script>
 
 </div> 

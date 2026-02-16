@@ -24,6 +24,10 @@ if (isset($_POST['create_new_section'])) {
     $title_safe = mysqli_real_escape_string($conn, $title);
     $type = $_POST['input_type']; 
     
+    // Check if duplicates are allowed (Checkbox: Checked = Yes, Unchecked = No/Unique)
+    $allow_duplicates = isset($_POST['allow_duplicates']);
+    $constraint = $allow_duplicates ? "" : " UNIQUE";
+    
     $check = mysqli_query($conn, "SELECT id FROM $meta_table WHERE section_title = '$title_safe'");
     if (mysqli_num_rows($check) > 0) {
         $_SESSION['sys_msg'] = "$title already exists"; $_SESSION['sys_msg_color'] = "red";
@@ -39,9 +43,16 @@ if (isset($_POST['create_new_section'])) {
             $max = mysqli_fetch_assoc(mysqli_query($conn, "SELECT MAX(display_order) as m FROM $meta_table")); $next = $max['m'] + 1;
             mysqli_query($conn, "INSERT INTO $meta_table (section_title, column_name, input_type, display_order) VALUES ('$title_safe', '$col', '$type', $next)");
             
-            if ($type == 'numeric') { mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` INT DEFAULT 0"); }
-            elseif ($type == 'date') { mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` DATE"); } 
-            else { mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` VARCHAR(255)"); }
+            // Alter Data Table with optional UNIQUE constraint
+            if ($type == 'numeric') { 
+                // Use NULL default for UNIQUE columns to prevent duplicate '0' errors
+                $def = $allow_duplicates ? "DEFAULT 0" : "DEFAULT NULL";
+                mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` INT $def $constraint"); 
+            } elseif ($type == 'date') { 
+                mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` DATE DEFAULT NULL $constraint"); 
+            } else { 
+                mysqli_query($conn, "ALTER TABLE `$data_table` ADD COLUMN `$col` VARCHAR(255) DEFAULT NULL $constraint"); 
+            }
             
             // --- ADDED: Handle Edit Option Checkbox ---
             if (isset($_POST['need_edit_option'])) {
@@ -49,7 +60,8 @@ if (isset($_POST['create_new_section'])) {
             }
             // ------------------------------------------
             
-            $_SESSION['sys_msg'] = "Section Created Successfully"; $_SESSION['sys_msg_color'] = "green";
+            $msg_suffix = $allow_duplicates ? "" : " (Unique)";
+            $_SESSION['sys_msg'] = "Section Created Successfully$msg_suffix"; $_SESSION['sys_msg_color'] = "green";
         }
     }
     // header("Location: invoices_management.php"); exit();
@@ -122,6 +134,13 @@ include 'header.php';
                 <option value="numeric">Numeric Only</option>
                 <option value="date">Date</option>
             </select>
+            
+            <div style="margin-top:12px; margin-bottom:12px; background:#f9f9f9; padding:8px; border-radius:4px; border:1px solid #eee;">
+                <label style="display:inline-flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer;">
+                    <input type="checkbox" name="allow_duplicates" checked style="width:auto; margin:0;"> 
+                    <span><strong>Allow Duplicate Values</strong> <br><span style="font-size:12px; color:#666;">(Uncheck this to enforce unique values only, e.g., for Invoice Numbers)</span></span>
+                </label>
+            </div>
             
             <div style="margin: 10px 0; text-align: left;">
                 <label style="display: inline-flex; align-items: center; cursor: pointer; color: #333;">

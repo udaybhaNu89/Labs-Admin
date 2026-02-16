@@ -1,4 +1,7 @@
 <?php
+// Start output buffering to catch any unwanted whitespace/warnings
+ob_start();
+
 require 'auth_session.php';
 
 // Check for local message from session
@@ -11,12 +14,13 @@ if (isset($_SESSION['local_msg'])) {
     unset($_SESSION['local_msg_type']);
 }
 
-// --- HELPER: Get Table Name from Lab ID/Name ---
+// --- HELPER: Get Table Name from Lab ID/Name (Updated for labs_unit) ---
 function getLabTableName($conn, $lab_id_or_name) {
     $safe_val = mysqli_real_escape_string($conn, $lab_id_or_name);
-    $q = mysqli_query($conn, "SELECT table_lab_name FROM lab_name WHERE id = '$safe_val' OR name = '$safe_val' LIMIT 1");
+    // QUERY LABS_UNIT instead of lab_name
+    $q = mysqli_query($conn, "SELECT lab_name_table FROM labs_unit WHERE id = '$safe_val' OR lab_name = '$safe_val' LIMIT 1");
     if ($row = mysqli_fetch_assoc($q)) {
-        return $row['table_lab_name'];
+        return $row['lab_name_table'];
     }
     return false;
 }
@@ -65,17 +69,24 @@ function convertXlsxToCsv($xlsx_file, $csv_file) {
 
 // --- ACTION 1: FETCH DATA FOR PDF GENERATION (AJAX HANDLER) ---
 if (isset($_POST['fetch_export_data'])) {
+    // Clear any previous output (warnings/HTML) to ensure valid JSON
+    ob_clean();
+    
     $target_lab = $_POST['lab_id'];
     $table_name = getLabTableName($conn, $target_lab);
     
-    $lab_name_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name FROM lab_name WHERE id = '$target_lab'"));
-    $lab_name = $lab_name_row ? $lab_name_row['name'] : 'Lab_Data';
+    // UPDATED: Fetch Lab Name from labs_unit
+    $lab_name = 'Lab_Data';
+    $lab_q = mysqli_query($conn, "SELECT lab_name FROM labs_unit WHERE id = '$target_lab'");
+    if($lab_q && $row = mysqli_fetch_assoc($lab_q)) {
+        $lab_name = $row['lab_name'];
+    }
 
-    // --- NEW: Fetch Lab Personnel (Incharge / Programmer) ---
+    // --- Fetch Lab Personnel (Incharge / Programmer) ---
     $lab_incharge = "N/A";
     $lab_programmer = "N/A";
     
-    // 1. Identify dynamic columns for Incharge and Programmer
+    // 1. Identify dynamic columns
     $meta_res = mysqli_query($conn, "SELECT section_title, column_name FROM labs_sections WHERE section_title LIKE '%Incharge%' OR section_title LIKE '%Programmer%'");
     $inc_col = ""; $prog_col = "";
     
@@ -94,7 +105,6 @@ if (isset($_POST['fetch_export_data'])) {
             if($prog_col && isset($u_row[$prog_col])) $lab_programmer = $u_row[$prog_col];
         }
     }
-    // --------------------------------------------------------
 
     if ($table_name) {
         $cols = []; $headers = [];
@@ -110,15 +120,18 @@ if (isset($_POST['fetch_export_data'])) {
             $sql = "SELECT `$col_str` FROM `$table_name`";
             $data_res = mysqli_query($conn, $sql);
             
-            while ($row = mysqli_fetch_assoc($data_res)) {
-                $clean_row = [];
-                foreach($cols as $c) {
-                    $clean_row[] = $row[$c];
+            if ($data_res) {
+                while ($row = mysqli_fetch_assoc($data_res)) {
+                    $clean_row = [];
+                    foreach($cols as $c) {
+                        $clean_row[] = $row[$c];
+                    }
+                    $data_rows[] = $clean_row;
                 }
-                $data_rows[] = $clean_row;
             }
         }
         
+        header('Content-Type: application/json');
         echo json_encode([
             'status' => 'success', 
             'filename' => $lab_name, 
@@ -128,6 +141,7 @@ if (isset($_POST['fetch_export_data'])) {
             'data' => $data_rows
         ]);
     } else {
+        header('Content-Type: application/json');
         echo json_encode(['status' => 'error', 'message' => 'Lab table not found']);
     }
     exit(); 
@@ -275,11 +289,13 @@ if (isset($_POST['import_excel'])) {
     header("Location: systems_info_form.php"); exit();
 }
 
+// Flush buffer and include header
+ob_end_flush();
 include 'header.php';
 
-// Fetch Labs for Dropdown
+// Fetch Labs for Dropdown (from labs_unit)
 $lab_options = "";
-$lab_res = mysqli_query($conn, "SELECT id, name FROM lab_name ORDER BY name ASC");
+$lab_res = mysqli_query($conn, "SELECT id, lab_name as name FROM labs_unit ORDER BY lab_name ASC");
 while ($row = mysqli_fetch_assoc($lab_res)) {
     $lab_options .= "<option value='".$row['id']."'>".$row['name']."</option>";
 }
@@ -348,50 +364,59 @@ while ($row = mysqli_fetch_assoc($lab_res)) {
             method: 'POST',
             body: formData
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
+        .then(response => {
+            // Check if response is valid
+            if (!response.ok) { throw new Error("Network response was not ok"); }
+            return response.text(); // Get text first to debug if not JSON
+        })
+        .then(text => {
+            try {
+                const data = JSON.parse(text); // Parse JSON manually
+                if (data.status === 'success') {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
 
-                // 1. Header: Lab Name
-                doc.setFontSize(16);
-                doc.setTextColor(0, 150, 136); // Primary Green
-                doc.text(data.filename + " - Systems Report", 14, 20);
-                
-                // 2. Sub-header: Date
-                doc.setFontSize(10);
-                doc.setTextColor(100, 100, 100); // Grey
-                doc.text("Generated on: " + new Date().toLocaleString(), 14, 28);
+                    // 1. Header: Lab Name
+                    doc.setFontSize(16);
+                    doc.setTextColor(0, 150, 136); // Primary Green
+                    doc.text(data.filename + " - Systems Report", 14, 20);
+                    
+                    // 2. Sub-header: Date
+                    doc.setFontSize(10);
+                    doc.setTextColor(100, 100, 100); // Grey
+                    doc.text("Generated on: " + new Date().toLocaleString(), 14, 28);
 
-                // 3. Lab Personnel Info (Incharge / Programmer)
-                doc.setTextColor(0, 0, 0); // Black
-                doc.setFontSize(11);
-                
-                // Draw names
-                doc.text("Lab Incharge: " + (data.lab_incharge || "N/A"), 14, 36);
-                doc.text("Programmer: " + (data.lab_programmer || "N/A"), 14, 42);
+                    // 3. Lab Personnel Info (Incharge / Programmer)
+                    doc.setTextColor(0, 0, 0); // Black
+                    doc.setFontSize(11);
+                    doc.text("Lab Incharge: " + (data.lab_incharge || "N/A"), 14, 36);
+                    doc.text("Programmer: " + (data.lab_programmer || "N/A"), 14, 42);
 
-                // 4. Data Table
-                doc.autoTable({
-                    head: [data.headers],
-                    body: data.data,
-                    startY: 48, // Start below the personnel info
-                    theme: 'grid',
-                    headStyles: { fillColor: [0, 150, 136] }, 
-                    styles: { fontSize: 9 }
-                });
+                    // 4. Data Table
+                    doc.autoTable({
+                        head: [data.headers],
+                        body: data.data,
+                        startY: 48,
+                        theme: 'grid',
+                        headStyles: { fillColor: [0, 150, 136] }, 
+                        styles: { fontSize: 9 }
+                    });
 
-                // Save File
-                doc.save(data.filename + '_Systems_Report.pdf');
-            } else {
-                alert("Error: " + data.message);
+                    // Save File
+                    doc.save(data.filename + '_Systems_Report.pdf');
+                } else {
+                    alert("Error: " + data.message);
+                }
+            } catch (e) {
+                console.error("JSON Parse Error:", e);
+                console.log("Server Response:", text); // Log actual response for debugging
+                alert("An error occurred while generating the PDF. (Server returned invalid data)");
             }
             btn.value = "Download PDF";
             btn.disabled = false;
         })
         .catch(error => {
-            console.error('Error:', error);
+            console.error('Fetch Error:', error);
             alert("An error occurred while generating the PDF.");
             btn.value = "Download PDF";
             btn.disabled = false;
@@ -404,7 +429,7 @@ while ($row = mysqli_fetch_assoc($lab_res)) {
     <div style="display:flex; justify-content:space-between; align-items:center;">
         <h2 style="margin:0; color:var(--primary);">Add System Details</h2>
         <div>
-            <button onclick="toggleExport()" class="btn-toggle" style="background:#009688; font-size:12px; margin-right:5px;">Export PDF</button>
+            <button onclick="toggleExport()" class="btn-toggle" style="background:#009688; font-size:12px; margin-right:5px;">Download PDF</button>
             <button onclick="toggleImport()" class="btn-toggle" style="background:#2196f3; font-size:12px;">Import Excel/CSV</button>
         </div>
     </div>
@@ -429,7 +454,7 @@ while ($row = mysqli_fetch_assoc($lab_res)) {
             </select>
         </div>
         <div style="margin-top:10px;">
-            <input type="button" id="btnDownloadPDF" onclick="generatePDF()" value="Export PDF" class="btn-add" style="background:#009688; cursor:pointer;">
+            <input type="button" id="btnDownloadPDF" onclick="generatePDF()" value="Download PDF" class="btn-add" style="background:#009688; cursor:pointer;">
         </div>
     </div>
     <div id="importSection" class="import-box">

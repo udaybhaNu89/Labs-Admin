@@ -30,6 +30,11 @@ if (isset($_POST['update_info_field'])) {
         } else {
             $_SESSION['sys_msg'] = "Update Failed"; $_SESSION['sys_msg_color'] = "red";
         }
+        if($col == "no_of_systems_present") {
+            $lab_name = $_POST['context_lab'];
+            preg_match('/\d+/', $val, $matches);
+            mysqli_query($conn, "UPDATE lab_series_config SET end_no = '$matches[0]' WHERE lab_name = '$lab_name'");
+        }
     } else {
         $_SESSION['sys_msg'] = "Error: Field not editable"; $_SESSION['sys_msg_color'] = "red";
     }
@@ -203,13 +208,14 @@ $lab_unit_id = 0;
 // 1. FETCH LAB SYSTEMS MAPPING
 // =============================================================
 $lab_systems_data = [];
-$master_query = "SELECT name, table_lab_name FROM lab_name";
+// Modified to fetch from labs_unit
+$master_query = "SELECT lab_name as name, lab_name_table FROM labs_unit";
 $master_res = mysqli_query($conn, $master_query);
 
 if ($master_res) {
     while ($row = mysqli_fetch_assoc($master_res)) {
         $l_name = $row['name'];
-        $t_name = $row['table_lab_name'];
+        $t_name = $row['lab_name_table'];
         $systems = [];
 
         if (!empty($t_name)) {
@@ -272,12 +278,13 @@ if (isset($_POST['submit_info'])) {
         }
 
         // 2. FETCH SYSTEM DETAILS
-        $tbl_query = "SELECT table_lab_name FROM lab_name WHERE name = '$selected_lab' LIMIT 1";
+        // Modified query to labs_unit
+        $tbl_query = "SELECT lab_name_table FROM labs_unit WHERE lab_name = '$selected_lab' LIMIT 1";
         $tbl_res = mysqli_query($conn, $tbl_query);
         
         if ($tbl_res && mysqli_num_rows($tbl_res) > 0) {
             $tbl_row = mysqli_fetch_assoc($tbl_res);
-            $target_table = $tbl_row['table_lab_name'];
+            $target_table = $tbl_row['lab_name_table'];
             $target_table_for_edit = $target_table; 
             
             if (!empty($target_table)) {
@@ -433,7 +440,8 @@ include 'header.php';
             <select name="lab_name" required style="width:100%; padding:10px; border:1px solid #ddd; border-radius:4px;">
                 <option value="" disabled selected>-- Select Lab --</option>
                 <?php
-                $lab_query = "SELECT name FROM lab_name ORDER BY name ASC";
+                // Modified query to labs_unit
+                $lab_query = "SELECT lab_name as name FROM labs_unit ORDER BY lab_name ASC";
                 $lab_res = mysqli_query($conn, $lab_query);
                 if (mysqli_num_rows($lab_res) > 0) {
                     while ($row = mysqli_fetch_assoc($lab_res)) {

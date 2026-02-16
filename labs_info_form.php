@@ -13,63 +13,112 @@ if (isset($_SESSION['local_msg'])) {
 
 // --- ACTION 1: MANUAL FORM SUBMISSION ---
 if (isset($_POST['submit_labs_form'])) {
-    $cols = ""; $vals = "";
     
-    // Fetch dynamic sections
+    // 1. Capture Lab Name for Table Generation
+    $lab_name = isset($_POST['lab_name']) ? $_POST['lab_name'] : '';
+    
+    // 2. Generate lab_name_table (e.g., "Nikson Lab" -> "nikson_lab")
+    $raw_name = $_POST['lab_name'];
+    $generated_table_name = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $raw_name));
+    $generated_table_name = trim($generated_table_name, '_');
+
+    // My options
+    $lab_code = $_POST['lab_code'];
+    $sys_present = $_POST['no_of_systems_present'];
+    $end_count = strlen($sys_present);
+
+    // 3. Prepare Columns & Values dynamically
+    $cols = ""; 
+    $vals = "";
+    
     $res = mysqli_query($conn, "SELECT column_name FROM labs_sections ORDER BY display_order ASC");
     
     if(mysqli_num_rows($res) > 0) {
         while ($sec = mysqli_fetch_assoc($res)) {
             $col = $sec['column_name'];
             $val = "";
-            if (isset($_POST[$col])) { $val = mysqli_real_escape_string($conn, $_POST[$col]); }
+
+            // Special Logic: Auto-generate lab_name_table value
+            if ($col == 'lab_name_table') {
+                $val = $generated_table_name;
+            } 
+            // Standard Fields
+            else {
+                if (isset($_POST[$col])) { 
+                    $val = mysqli_real_escape_string($conn, $_POST[$col]); 
+                    
+                    // Force numeric type for capacity/present to ensure 0 is saved if empty/zero
+                    if ($col == 'no_of_system_capacity' || $col == 'no_of_systems_present') {
+                        $val = (int)$val; 
+                    }
+                }
+            }
             
             $cols .= ", `$col`";
             $vals .= ", '$val'";
         }
-        
-        $sql = "INSERT INTO labs_unit (id $cols) VALUES (NULL $vals)"; 
-        
-        // Try-Catch for Duplicate Errors
-        try {
-            if (mysqli_query($conn, $sql)) {
-                $_SESSION['local_msg'] = "Form submitted successfully"; 
-                $_SESSION['local_msg_type'] = "green";
-            }
-        } catch (mysqli_sql_exception $e) {
-            // Check for Duplicate Entry Error (Code 1062)
-            if ($e->getCode() == 1062) {
-                $error_msg = $e->getMessage();
-                preg_match("/Duplicate entry '(.*?)' for key '(.*?)'/", $error_msg, $matches);
-                $dup_value = isset($matches[1]) ? $matches[1] : 'Value';
-                $dup_key   = isset($matches[2]) ? $matches[2] : 'Field';
-                
-                // Find readable name
-                $nice_name = $dup_key;
-                $name_check = mysqli_query($conn, "SELECT section_title, column_name FROM labs_sections");
-                while ($row = mysqli_fetch_assoc($name_check)) {
-                    if (strpos($dup_key, $row['column_name']) !== false) {
-                        $nice_name = $row['section_title'];
-                        break;
-                    }
-                }
-                $_SESSION['local_msg'] = "$nice_name already has '$dup_value' value"; 
-                $_SESSION['local_msg_type'] = "red";
-            } else {
-                $_SESSION['local_msg'] = "Error: " . $e->getMessage(); 
-                $_SESSION['local_msg_type'] = "red";
-            }
-        }
-    } else {
-        $_SESSION['local_msg'] = "Error: No sections defined."; 
-        $_SESSION['local_msg_type'] = "red";
     }
+        
+    // 4. Construct Final Insert Query
+    $sql = "INSERT INTO labs_unit (id $cols) VALUES (NULL $vals)"; 
+    
+    try {        
+        if (mysqli_query($conn, $sql)) {
+            
+            // --- Automatically Create the Table for this Lab ---
+            $last_id = mysqli_insert_id($conn);
+            
+            // 1. Fetch the generated table name from the database
+            mysqli_query($conn, "UPDATE labs_unit SET lab_name_table = '$generated_table_name' WHERE id = '$last_id'");
+            mysqli_query($conn, "INSERT INTO lab_series_config (lab_name, prefix, start_no, end_no, padding) VALUES ('$lab_name', '$lab_code', 1, $sys_present, $end_count)");
+            $fetch_tbl_q = mysqli_query($conn, "SELECT lab_name_table FROM labs_unit WHERE id = '$last_id'");
+            if ($row = mysqli_fetch_assoc($fetch_tbl_q)) {
+                $tbl_lab_name = $row['lab_name_table'];
+                
+                if (!empty($tbl_lab_name)) {
+                    // 2. Create the Table
+                    $create_lab_sql = "CREATE TABLE IF NOT EXISTS `$tbl_lab_name` (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        system_number TEXT NOT NULL,
+                        os TEXT, config_details TEXT,
+                        UNIQUE(system_number(255)))"; 
+                    mysqli_query($conn, $create_lab_sql);
+                }
+            }
+            
+            $_SESSION['local_msg'] = "Lab Created Successfully"; 
+            $_SESSION['local_msg_type'] = "green";
+        }
+    } catch (mysqli_sql_exception $e) {
+        if ($e->getCode() == 1062) {
+            $error_msg = $e->getMessage();
+            preg_match("/Duplicate entry '(.*?)' for key '(.*?)'/", $error_msg, $matches);
+            $dup_value = isset($matches[1]) ? $matches[1] : 'Value';
+            $dup_key   = isset($matches[2]) ? $matches[2] : 'Field';
+            
+            // Nice Name Mapping
+            $nice_name = $dup_key;
+            $name_check = mysqli_query($conn, "SELECT section_title, column_name FROM labs_sections");
+            while ($row = mysqli_fetch_assoc($name_check)) {
+                if (strpos($dup_key, $row['column_name']) !== false) {
+                    $nice_name = $row['section_title'];
+                    break;
+                }
+            }
+            
+            $_SESSION['local_msg'] = "$nice_name already has '$dup_value' value"; 
+            $_SESSION['local_msg_type'] = "red";
+        } else {
+            $_SESSION['local_msg'] = "Error: " . $e->getMessage(); 
+            $_SESSION['local_msg_type'] = "red";
+        }
+    }
+    
     header("Location: labs_info_form.php"); exit();
 }
 
 // --- ACTION 2: EXCEL/CSV FILE IMPORT ---
 if (isset($_POST['import_excel'])) {
-    // 1. Check File
     if (!isset($_FILES['excel_file']) || $_FILES['excel_file']['error'] != 0) {
         $_SESSION['local_msg'] = "Error: Please upload a valid file."; 
         $_SESSION['local_msg_type'] = "red";
@@ -79,48 +128,42 @@ if (isset($_POST['import_excel'])) {
     $filename = $_FILES['excel_file']['tmp_name'];
     $file_ext = pathinfo($_FILES['excel_file']['name'], PATHINFO_EXTENSION);
 
-    // 2. Validate Extension (Allow CSV only)
     if (strtolower($file_ext) !== 'csv') {
         $_SESSION['local_msg'] = "Invalid File: Please save your Excel file as .CSV (Comma Separated Values) and try again."; 
         $_SESSION['local_msg_type'] = "red";
         header("Location: labs_info_form.php"); exit();
     }
 
-    // --- FIX: ROBUST MAPPING HELPER ---
-    // This removes spaces and symbols to ensure 'Building Name' matches 'buildingname' or 'Building_Name'
     function normalize_header($str) {
         return strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $str));
     }
 
-    // 3. Prepare Column Mapping (Section Title -> Column Name)
     $db_map = [];
     $res = mysqli_query($conn, "SELECT section_title, column_name FROM labs_sections");
     while ($row = mysqli_fetch_assoc($res)) {
-        // Use normalized key
         $key = normalize_header($row['section_title']);
         $db_map[$key] = $row['column_name'];
     }
+    // Ensure defaults are mapped if they aren't in the DB sections
+    $db_map['labname'] = 'lab_name';
+    $db_map['labcode'] = 'lab_code';
+    $db_map['roomnumber'] = 'room_no';
+    $db_map['roomno'] = 'room_no';
+    $db_map['systemcapacity'] = 'no_of_system_capacity';
+    $db_map['systemspresent'] = 'no_of_systems_present';
 
-    // 4. Parse CSV
     $handle = fopen($filename, "r");
     if ($handle !== FALSE) {
         $row_count = 0;
         $success_count = 0;
-        $headers = [];
-        $header_map = []; // CSV Index -> DB Column Name
-
-        // Detect BOM (Byte Order Mark) which can break the first column
-        // We will just trim standard whitespace in the loop below, but BOM removal is implicit in preg_replace inside normalize_header
+        $header_map = []; 
 
         while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
             $row_count++;
 
-            // ROW 1: HEADERS
             if ($row_count == 1) {
-                $headers = $data;
-                foreach ($headers as $index => $title) {
-                    $clean_title = normalize_header($title); // Normalize CSV header
-                    
+                foreach ($data as $index => $title) {
+                    $clean_title = normalize_header($title);
                     if (isset($db_map[$clean_title])) {
                         $header_map[$index] = $db_map[$clean_title];
                     }
@@ -135,29 +178,46 @@ if (isset($_POST['import_excel'])) {
                 continue;
             }
 
-            // DATA ROWS
             $cols_sql = [];
             $vals_sql = [];
+            $current_lab_name = "";
 
             foreach ($data as $index => $cell_value) {
                 if (isset($header_map[$index])) {
                     $db_col = $header_map[$index];
                     $safe_val = mysqli_real_escape_string($conn, trim($cell_value));
                     
+                    if($db_col == 'lab_name') $current_lab_name = $safe_val;
+
                     $cols_sql[] = "`$db_col`";
                     $vals_sql[] = "'$safe_val'";
                 }
             }
 
+            if(!empty($current_lab_name)) {
+                $gen_tbl = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $current_lab_name));
+                $gen_tbl = trim($gen_tbl, '_');
+                $cols_sql[] = "`lab_name_table`";
+                $vals_sql[] = "'$gen_tbl'";
+            }
+
             if (!empty($cols_sql)) {
                 $sql_insert = "INSERT INTO labs_unit (id, " . implode(',', $cols_sql) . ") VALUES (NULL, " . implode(',', $vals_sql) . ")";
                 try {
-                    mysqli_query($conn, $sql_insert);
-                    $success_count++;
-                } catch (Exception $e) {
-                    // Skip duplicates silently or log count
-                    continue; 
-                }
+                    if(mysqli_query($conn, $sql_insert)) {
+                        $success_count++;
+                        if(!empty($current_lab_name)) {
+                            $gen_tbl = strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $current_lab_name));
+                            $gen_tbl = trim($gen_tbl, '_');
+                            $create_lab_sql = "CREATE TABLE IF NOT EXISTS `$gen_tbl` (
+                                id INT AUTO_INCREMENT PRIMARY KEY,
+                                system_number TEXT NOT NULL,
+                                os TEXT, config_details TEXT,
+                                UNIQUE(system_number(255)))"; 
+                            mysqli_query($conn, $create_lab_sql);
+                        }
+                    }
+                } catch (Exception $e) { continue; }
             }
         }
         fclose($handle);
@@ -173,13 +233,13 @@ if (isset($_POST['import_excel'])) {
 
 include 'header.php';
 
-// --- LOGIC TO IDENTIFY UNIQUE COLUMNS ---
 $unique_list = "";
 $map_res = mysqli_query($conn, "SELECT * FROM labs_sections");
 $col_title_map = [];
 while($r = mysqli_fetch_assoc($map_res)) {
     $col_title_map[$r['column_name']] = $r['section_title'];
 }
+$col_title_map['lab_code'] = 'Lab Code';
 
 $idx_res = mysqli_query($conn, "SHOW INDEXES FROM labs_unit WHERE Non_unique = 0 AND Key_name != 'PRIMARY'");
 $found_unique = [];
@@ -206,7 +266,6 @@ if(!empty($found_unique)) {
     .msg-green { background-color: #e8f5e9; color: #27ae60; border: 1px solid #c8e6c9; }
     .msg-red { background-color: #fce4ec; color: #c0392b; border: 1px solid #fadbd8; }
 
-    /* Import Section Styles */
     .import-box { background-color: #f0f4c3; border: 1px dashed #c0ca33; padding: 15px; margin-bottom: 25px; border-radius: 6px; text-align: center; display: none; }
     .btn-file { background-color: #fff; border: 1px solid #ccc; padding: 5px; width: 100%; border-radius: 4px; }
 </style>
@@ -239,6 +298,7 @@ if(!empty($found_unique)) {
         const inputs = document.querySelectorAll('.lab-input, .google-date-input');
         let isValid = true;
         inputs.forEach(input => {
+            // Check all inputs since all are required
             if (!input.value.trim()) {
                 checkField(input);
                 isValid = false;
@@ -290,29 +350,42 @@ if(!empty($found_unique)) {
 
     <form method="POST" id="labsForm" onsubmit="validateOnSubmit(event)">
         <?php
+        // Fetch ALL sections ordered by display_order
         $res = mysqli_query($conn, "SELECT * FROM labs_sections ORDER BY display_order ASC");
+        
         if (mysqli_num_rows($res) > 0) {
             while ($sec = mysqli_fetch_assoc($res)) {
                 $col = $sec['column_name'];
                 $type = $sec['input_type'];
                 $title = $sec['section_title'];
+                
+                // Hide Internal Fields
+                if ($col == 'lab_name_table' || $col == 'table_lab_name') continue;
+
+                // Enforce REQUIRED on ALL visible fields
+                $req_attr = "required";
+
                 echo "<div class='form-group'>";
-                echo "<label style='display:block; font-weight:bold; margin-bottom:5px; justify-content:left;'>$title <span style='color:#d93025'>*</span></label>";
+                echo "<label style='display:block; font-weight:bold; margin-bottom:5px; justify-content:left;'>$title";
+                echo " <span style='color:#d93025'>*</span>"; // Always show asterisk
+                echo "</label>";
                 
                 if ($type == 'numeric') { 
-                    echo "<input type='number' name='$col' class='lab-input' required onblur='checkField(this)' oninput='clearError(this)'>"; 
+                    echo "<input type='number' name='$col' class='lab-input' $req_attr onblur='checkField(this)' oninput='clearError(this)'>"; 
                 } elseif ($type == 'date') { 
                     echo "<div class='google-date-wrapper'>";
-                    echo "<input type='date' name='$col' class='google-date-input' required onblur='checkField(this)' oninput='clearError(this)'>"; 
+                    echo "<input type='date' name='$col' class='google-date-input' $req_attr onblur='checkField(this)' oninput='clearError(this)'>"; 
                     echo "</div>";
                 } else { 
-                    echo "<input type='text' name='$col' class='lab-input' required onblur='checkField(this)' oninput='clearError(this)'>"; 
+                    echo "<input type='text' name='$col' class='lab-input' $req_attr onblur='checkField(this)' oninput='clearError(this)'>"; 
                 }
+                
+                // Always show error message div
                 echo "<div class='error-msg'>This field is required</div>";
                 echo "</div>";
             }
         } else { 
-            echo "<p style='text-align:center; color:#e74c3c;'>No input sections defined. Go to Form Management to add fields.</p>"; 
+            echo "<p style='text-align:center; color:#e74c3c;'>No fields defined. Please configure them in Labs Manager.</p>"; 
         }
         ?>
         

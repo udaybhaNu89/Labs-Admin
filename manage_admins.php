@@ -62,10 +62,11 @@ $view = $_GET['view'] ?? 'menu';
     </div>
 
 <?php elseif ($view == 'list'): ?>
-    <h1>Existing Admins</h1><hr>
+    <h1><strong>Existing Admins</strong></h1><hr>
     <table>
         <tr>
             <th>Admin Username</th>
+            <th>Current Password</th>
             <th>Permission</th>
             <th>Created By</th>
             <th>Action</th>
@@ -78,6 +79,7 @@ $view = $_GET['view'] ?? 'menu';
             
             echo "<tr>";
             echo "<td>" . htmlspecialchars($row['username']) . "</td>";
+            echo "<td><span class='password-text masked'>********</span><span class='password-text real' style='display:none;'>" . $row['password'] . "</span><button class='btn-show' onclick='togglePass(this)'>Show</button></td>";
             echo "<td><span style='background:#e3f2fd; color:#1565c0; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:bold;'>" . htmlspecialchars($perm_display) . "</span></td>";
             echo "<td>" . (isset($row['created_by']) ? htmlspecialchars($row['created_by']) : '-') . "</td>";
             
