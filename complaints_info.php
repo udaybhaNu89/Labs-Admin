@@ -59,6 +59,7 @@ if (isset($_GET['mark_complete'])) {
             $email_body .= "Date Reported: " . $comp_data['created_at'] . "\n";
             $email_body .= "Status: Issue Fixed\n";
             $email_body .= "Issue Fixed At: " . $fixed_time . "\n";
+            $email_body .= "Issue Fixed By: " . $comp_data['complaint_modified_by'] . "\n";
             
             $headers = "From: no-reply@labsystem.com"; 
             @mail($to_email, $email_subject, $email_body, $headers);
@@ -131,7 +132,8 @@ if (isset($_POST['submit_partial'])) {
             $email_body .= "Original Details: " . $original['other_details'] . "\n";
             $email_body .= "----------------\n";
             $email_body .= "Date Reported: " . $original['created_at'] . "\n";
-            $email_body .= "Status: Partially Completed\nUpdated At: " . $partial_time . "\n";
+            $email_body .= "Status: Partially Completed - " . stripslashes($desc) . "\nUpdated At: " . $partial_time . "\n";
+            $email_body .= "Updated By: " . $original['complaint_modified_by'] . "\n";
             
             $headers = "From: no-reply@labsystem.com"; 
             @mail($to_email, $email_subject, $email_body, $headers);
