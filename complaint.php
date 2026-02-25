@@ -5,7 +5,7 @@ include 'db.php';
 // ==========================================
 // CONFIGURATION
 // ==========================================
-$admin_email_address = "tonystark20201919@gmail.com"; 
+$admin_email_address = "Admin_Email";
 // ==========================================
 
 $message = "";
